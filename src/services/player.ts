@@ -1,7 +1,7 @@
 import {PermissionsBitField, VoiceChannel, Snowflake} from 'discord.js';
 import {Readable} from 'stream';
 import {setTimeout as sleep} from 'timers/promises';
-import hasha from 'hasha';
+import * as hasha from 'hasha';
 import {WriteStream} from 'fs-capacitor';
 import ffmpeg from 'fluent-ffmpeg';
 import shuffle from 'array-shuffle';
@@ -520,7 +520,7 @@ export default class {
   }
 
   private getHashForCache(url: string): string {
-    return hasha(url);
+    return (hasha as any)(url);
   }
 
   private async getStream(song: QueuedSong, options: {seek?: number; to?: number} = {}): Promise<Readable> {

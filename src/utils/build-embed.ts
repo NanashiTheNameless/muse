@@ -1,4 +1,4 @@
-import getYouTubeID from 'get-youtube-id';
+import * as getYouTubeID from 'get-youtube-id';
 import {EmbedBuilder} from 'discord.js';
 import Player, {MediaSource, QueuedSong, STATUS} from '../services/player.js';
 import getProgressBar from './get-progress-bar.js';
@@ -19,7 +19,7 @@ const getSongTitle = ({title, url, offset, source}: QueuedSong, shouldTruncate =
   const cleanSongTitle = title.replace(/\[.*\]/, '').trim();
 
   const songTitle = shouldTruncate ? truncate(cleanSongTitle, getMaxSongTitleLength(cleanSongTitle)) : cleanSongTitle;
-  const youtubeId = url.length === 11 ? url : getYouTubeID(url) ?? '';
+  const youtubeId = url.length === 11 ? url : (getYouTubeID as any)(url) ?? '';
 
   return `[${songTitle}](https://www.youtube.com/watch?v=${youtubeId}${offset === 0 ? '' : '&t=' + String(offset)})`;
 };

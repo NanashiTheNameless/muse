@@ -153,8 +153,8 @@ export default class implements Command {
       };
     }
 
-    await new Pagination(
-      interaction as ChatInputCommandInteraction<'cached'>,
+      await new Pagination(
+        interaction as any,
       {ephemeral: true, limit: 25})
       .setFields(fields)
       .paginateFields(true)
