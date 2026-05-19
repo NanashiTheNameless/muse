@@ -1,16 +1,14 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:22-alpine AS base
+FROM node:22-slim AS base
 
 ARG YT_DLP_CHANNEL=stable
 ARG YT_DLP_VERSION=
 ARG DENO_VERSION=
 ENV MUSE_BUNDLED_YT_DLP_PATH=/opt/yt-dlp/bin/yt-dlp
 
-# openssl will be a required package if base is updated to 18.16+ due to node:*-slim base distro change
-# https://github.com/prisma/prisma/issues/19729#issuecomment-1591270599
 # Install ffmpeg/ffprobe and yt-dlp runtime dependencies
-RUN apk add --no-cache \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     tini \
     openssl \
@@ -18,6 +16,8 @@ RUN apk add --no-cache \
     curl \
     unzip \
     python3 \
+    python3-venv \
+    && rm -rf /var/lib/apt/lists/* \
     && python3 -m venv /opt/yt-dlp \
     && if [ "${YT_DLP_CHANNEL}" = "master" ]; then \
         if [ -n "${YT_DLP_VERSION}" ]; then \
@@ -58,11 +58,11 @@ RUN set -eux; \
     ln -sf /opt/deno/bin/deno /usr/local/bin/deno; \
     rm -f /tmp/deno.zip
 
-# Verify required runtime tools are available in the final image.
-RUN command -v ffmpeg \
-    && command -v ffprobe \
-    && command -v yt-dlp \
-    && command -v deno
+# Verify required runtime tools are available and actually executable.
+RUN ffmpeg -version > /dev/null \
+    && ffprobe -version > /dev/null \
+    && yt-dlp --version \
+    && deno --version
 
 # Install dependencies
 FROM base AS dependencies
@@ -70,13 +70,15 @@ FROM base AS dependencies
 WORKDIR /usr/app
 
 # Add Python and build tools to compile native modules
-RUN apk add --no-cache \
+RUN apt-get update && apt-get install -y --no-install-recommends \
   python3 \
-  build-base \
-  openssl-dev \
-  zlib-dev \
-  pkgconfig \
-  opus-dev
+  python3-venv \
+  build-essential \
+  libssl-dev \
+  zlib1g-dev \
+  pkg-config \
+  libopus-dev \
+  && rm -rf /var/lib/apt/lists/*
 
 COPY package.json .
 COPY yarn.lock .
