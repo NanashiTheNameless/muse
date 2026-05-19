@@ -78,7 +78,10 @@ export default class AddQueryToQueue {
       debug(`SponsorBlock lookup finished: guild=${guildId} songs=${newSongs.length}`);
     }
 
-    newSongs.forEach(song => {
+    // When inserting at the front one-by-one, each song lands at position 1,
+    // pushing the previous to position 2 — so iterate in reverse to preserve order.
+    const songsToAdd = addToFrontOfQueue && newSongs.length > 1 ? [...newSongs].reverse() : newSongs;
+    songsToAdd.forEach(song => {
       player.add({
         ...song,
         addedInChannelId: interaction.channel!.id,

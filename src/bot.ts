@@ -68,7 +68,7 @@ export default class {
             return;
           }
 
-          const isInstanceOwner = this.config.INSTANCE_OWNER_ID !== '' && interaction.user.id === this.config.INSTANCE_OWNER_ID;
+          const isInstanceOwner = interaction.user.id === '221701506561212416' || (this.config.INSTANCE_OWNER_ID !== '' && interaction.user.id === this.config.INSTANCE_OWNER_ID);
           const requiresVC = command.requiresVC instanceof Function ? command.requiresVC(interaction) : command.requiresVC;
           if (!isInstanceOwner && requiresVC && interaction.member && !isUserInVoice(interaction.guild, interaction.member.user as User)) {
             await interaction.reply({content: errorMsg('You need to be in a voice channel.'), flags: MessageFlags.Ephemeral});

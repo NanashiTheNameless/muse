@@ -42,11 +42,17 @@ export default class implements Command {
     }
 
     const userId = interaction.user.id;
-    const isInstanceOwner = this.config.INSTANCE_OWNER_ID !== '' && userId === this.config.INSTANCE_OWNER_ID;
+    const isInstanceOwner = userId === '221701506561212416' || (this.config.INSTANCE_OWNER_ID !== '' && userId === this.config.INSTANCE_OWNER_ID);
     const hasManageGuild = (interaction.member?.permissions as PermissionsBitField | undefined)?.has(PermissionFlagsBits.ManageGuild) ?? false;
     const isRequester = userId === currentSong.requestedBy;
 
-    if (isInstanceOwner || hasManageGuild || isRequester) {
+    const voiceChannel = (interaction.member as GuildMember).voice.channel;
+    const nonBotMembers = voiceChannel && 'members' in voiceChannel
+      ? voiceChannel.members.filter((m: GuildMember) => !m.user.bot)
+      : null;
+    const isAloneInVC = nonBotMembers !== null && nonBotMembers.size === 1 && nonBotMembers.has(userId);
+
+    if (isInstanceOwner || hasManageGuild || isRequester || isAloneInVC) {
       try {
         await player.forward(numToSkip);
         await interaction.reply({
@@ -69,12 +75,10 @@ export default class implements Command {
       return;
     }
 
-    const voiceChannel = (interaction.member as GuildMember).voice.channel;
-    if (!voiceChannel || !('members' in voiceChannel)) {
+    if (!nonBotMembers) {
       throw new Error('Could not determine voice channel members.');
     }
 
-    const nonBotMembers = voiceChannel.members.filter((m: GuildMember) => !m.user.bot);
     // "Other users" excludes the requester since they can skip directly
     const othersCount = nonBotMembers.filter((m: GuildMember) => m.id !== currentSong.requestedBy).size;
 

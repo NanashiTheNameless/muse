@@ -457,7 +457,7 @@ export default class {
   }
 
   add(song: QueuedSong, {immediate = false} = {}): void {
-    if (song.playlist || !immediate) {
+    if (!immediate) {
       // Add to end of queue
       this.queue.push(song);
     } else {
