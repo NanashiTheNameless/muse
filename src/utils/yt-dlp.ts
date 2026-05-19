@@ -4,7 +4,7 @@ import path from 'path';
 
 const YT_DLP_VERSION_TIMEOUT_MS = 15_000;
 const YT_DLP_UPDATE_TIMEOUT_MS = 120_000;
-const YT_DLP_EXTRACT_TIMEOUT_MS = 45_000;
+const YT_DLP_EXTRACT_TIMEOUT_MS = 120_000;
 
 interface YtDlpMediaDownload {
   readonly url?: string;
@@ -141,6 +141,8 @@ const getYtDlpExtractArgs = (attempt: YtDlpExtractAttempt, videoIdOrUrl: string)
   '--skip-download',
   '--no-warnings',
   '--no-cache-dir',
+  '--extractor-retries', '3',
+  '--retry-sleep', 'extractor:exp=2:16',
   ...getYtDlpCookieArgs(),
   ...(attempt.format ? ['-f', attempt.format] : []),
   ...(attempt.sort ? ['-S', attempt.sort] : []),
