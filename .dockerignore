@@ -4,4 +4,3 @@ dist
 dts
 .env
 Dockerfile
-.docker-build-cache
