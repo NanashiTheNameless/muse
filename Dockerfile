@@ -83,6 +83,7 @@ RUN apt-get update \
   libssl-dev \
   zlib1g-dev \
   pkg-config \
+  libopus-dev \
     && apt-get autoclean \
     && apt-get autoremove \
     && rm -rf /var/lib/apt/lists/*
@@ -93,6 +94,9 @@ COPY .yarnrc.yml .
 
 # Ensure Corepack is enabled and Yarn v4 is prepared/activated for this build
 RUN corepack enable && corepack prepare yarn@4 --activate
+
+# Show per-package build output to avoid opaque "stuck" link/build steps in CI.
+ENV YARN_ENABLE_INLINE_BUILDS=1
 
 RUN --mount=type=cache,target=/usr/local/share/.cache/yarn \
   yarn install --immutable
