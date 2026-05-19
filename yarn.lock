@@ -198,6 +198,34 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@emnapi/core@npm:^1.10.0":
+  version: 1.10.0
+  resolution: "@emnapi/core@npm:1.10.0"
+  dependencies:
+    "@emnapi/wasi-threads": "npm:1.2.1"
+    tslib: "npm:^2.4.0"
+  checksum: 10c0/f51d08227857b60632de7714d708124f0e100a1462dde6df8221760939aa3204a73193830371830fac0716f3ccd2129f2cac1b17cd7d7958bc4da9018a296edb
+  languageName: node
+  linkType: hard
+
+"@emnapi/runtime@npm:^1.10.0":
+  version: 1.10.0
+  resolution: "@emnapi/runtime@npm:1.10.0"
+  dependencies:
+    tslib: "npm:^2.4.0"
+  checksum: 10c0/953f14991d1aefb92ee6f8eb27dea725e484791a53a0cb5f47d9e0087b9a2c929ff2e92adf95af15d6ad456db6300c6b761ebf72b50a875b874a83520b3ba093
+  languageName: node
+  linkType: hard
+
+"@emnapi/wasi-threads@npm:1.2.1":
+  version: 1.2.1
+  resolution: "@emnapi/wasi-threads@npm:1.2.1"
+  dependencies:
+    tslib: "npm:^2.4.0"
+  checksum: 10c0/32fcfa81ab396533b2ec1f4082b1ff779a05d9c836bbbd3f4398405b0e6814c0d9503b7993130e37bc6941dbc1ded49f55e9700ae9ca4e803bab2b5bc5deb331
+  languageName: node
+  linkType: hard
+
 "@esbuild/aix-ppc64@npm:0.28.0":
   version: 0.28.0
   resolution: "@esbuild/aix-ppc64@npm:0.28.0"
@@ -651,7 +679,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@inversifyjs/core@npm:10.0.1":
+"@inversifyjs/core@npm:10.0.1, @inversifyjs/core@npm:^10.0.1":
   version: 10.0.1
   resolution: "@inversifyjs/core@npm:10.0.1"
   dependencies:
@@ -3644,6 +3672,9 @@ __metadata:
     "@discordjs/voice": "npm:^0.19.2"
     "@distube/ytdl-core": "npm:^4.16.12"
     "@distube/ytsr": "npm:^2.0.4"
+    "@emnapi/core": "npm:^1.10.0"
+    "@emnapi/runtime": "npm:^1.10.0"
+    "@inversifyjs/core": "npm:^10.0.1"
     "@prisma/client": "npm:^7.8.0"
     "@types/bluebird": "npm:^3.5.42"
     "@types/fluent-ffmpeg": "npm:^2.1.28"

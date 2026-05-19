@@ -2,8 +2,9 @@
   "compilerOptions": {
     "lib": ["esnext"],
     "target": "es2020",
-    "module": "ES2020",
-    "moduleResolution": "node",
+    "module": "NodeNext",
+    "moduleResolution": "nodenext",
+    "allowSyntheticDefaultImports": true,
     "rootDir": "src",
     "ignoreDeprecations": "6.0",
     "strict": true,
