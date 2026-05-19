@@ -86,13 +86,14 @@ RUN apt-get update \
 
 COPY package.json .
 COPY yarn.lock .
+COPY .yarnrc.yml .
 
-RUN --mount=type=cache,target=/usr/local/share/.cache/yarn/v6 \
-    yarn install --prod --frozen-lockfile
+RUN --mount=type=cache,target=/usr/local/share/.cache/yarn \
+  yarn install --immutable
 RUN cp -R node_modules /usr/app/prod_node_modules
 
-RUN --mount=type=cache,target=/usr/local/share/.cache/yarn/v6 \
-    yarn install --frozen-lockfile
+RUN --mount=type=cache,target=/usr/local/share/.cache/yarn \
+  yarn install --immutable
 
 FROM dependencies AS builder
 

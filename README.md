@@ -67,6 +67,7 @@ If you keep the same `DISCORD_TOKEN` and reuse the same `/data` volume, bot iden
 ```bash
 git clone https://github.com/NanashiTheNameless/muse.git
 cd muse
+corepack enable
 cp .env.example .env
 # fill in DISCORD_TOKEN and YOUTUBE_API_KEY
 
