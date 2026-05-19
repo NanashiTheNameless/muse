@@ -12,6 +12,10 @@ interface YtDlpMediaDownload {
   readonly ext?: string;
   readonly acodec?: string;
   readonly vcodec?: string;
+  readonly abr?: number;
+  readonly tbr?: number;
+  readonly filesize?: number;
+  readonly filesize_approx?: number;
   readonly http_headers?: Record<string, string | null | undefined>;
 }
 
@@ -19,6 +23,7 @@ interface YtDlpResponse extends YtDlpMediaDownload {
   readonly is_live?: boolean;
   readonly live_status?: string;
   readonly requested_downloads?: readonly YtDlpMediaDownload[];
+  readonly formats?: readonly YtDlpMediaDownload[];
 }
 
 export interface YtDlpMediaSource {
@@ -38,7 +43,7 @@ export interface YtDlpUpdateResult {
 
 interface YtDlpExtractAttempt {
   readonly label: string;
-  readonly format: string;
+  readonly format?: string;
   readonly sort?: string;
   readonly extractorArgs?: string;
 }
@@ -62,6 +67,13 @@ const YT_DLP_EXTRACT_ATTEMPTS: YtDlpExtractAttempt[] = [
   {
     label: 'default clients best',
     format: 'best',
+  },
+  {
+    label: 'default clients automatic selection',
+  },
+  {
+    label: 'all clients automatic selection',
+    extractorArgs: 'youtube:player_client=all,-ios',
   },
 ];
 
@@ -115,8 +127,7 @@ const getYtDlpExtractArgs = (attempt: YtDlpExtractAttempt, videoIdOrUrl: string)
   '--no-warnings',
   '--no-cache-dir',
   ...getYtDlpCookieArgs(),
-  '-f',
-  attempt.format,
+  ...(attempt.format ? ['-f', attempt.format] : []),
   ...(attempt.sort ? ['-S', attempt.sort] : []),
   ...(attempt.extractorArgs ? ['--extractor-args', attempt.extractorArgs] : []),
   toYouTubeWatchUrl(videoIdOrUrl),
@@ -232,6 +243,49 @@ const updateWithYtDlpSelfUpdate = async () => {
 
 const joinErrors = (errors: string[]) => errors.length > 0 ? errors.join('; ') : undefined;
 
+const isPlayableProtocol = (protocol?: string) => {
+  if (!protocol) {
+    return true;
+  }
+
+  return ['http', 'https', 'm3u8', 'm3u8_native', 'http_dash_segments'].includes(protocol);
+};
+
+const hasPlayableUrl = (download: YtDlpMediaDownload) => Boolean(download.url) && isPlayableProtocol(download.protocol);
+
+const getAudioScore = (download: YtDlpMediaDownload) => download.abr ?? download.tbr ?? 0;
+
+const getSizeScore = (download: YtDlpMediaDownload) => download.filesize ?? download.filesize_approx ?? 0;
+
+const pickBestMediaDownload = (response: YtDlpResponse) => {
+  const requestedDownload = response.requested_downloads?.find(hasPlayableUrl);
+  if (requestedDownload) {
+    return requestedDownload;
+  }
+
+  if (hasPlayableUrl(response)) {
+    return response;
+  }
+
+  const playableFormats = response.formats?.filter(hasPlayableUrl) ?? [];
+  const audioOnlyFormats = playableFormats.filter(format => format.acodec && format.acodec !== 'none' && (!format.vcodec || format.vcodec === 'none'));
+  const formatsToRank = audioOnlyFormats.length > 0
+    ? audioOnlyFormats
+    : playableFormats.filter(format => format.acodec && format.acodec !== 'none');
+
+  return formatsToRank
+    .slice()
+    .sort((left, right) => {
+      const audioScoreDifference = getAudioScore(right) - getAudioScore(left);
+      if (audioScoreDifference !== 0) {
+        return audioScoreDifference;
+      }
+
+      return getSizeScore(right) - getSizeScore(left);
+    })
+    .at(0);
+};
+
 export const updateYtDlp = async (): Promise<YtDlpUpdateResult> => {
   let beforeVersion: string | null = null;
   try {
@@ -300,9 +354,9 @@ const extractYouTubeMediaSource = async (videoIdOrUrl: string, attempt: YtDlpExt
   });
 
   const response = JSON.parse(stdout) as YtDlpResponse;
-  const download = response.requested_downloads?.at(0) ?? response;
+  const download = pickBestMediaDownload(response);
 
-  if (!download.url) {
+  if (!download?.url) {
     throw new Error('yt-dlp did not return a playable media URL.');
   }
 
