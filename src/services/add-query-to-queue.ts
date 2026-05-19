@@ -58,14 +58,14 @@ export default class AddQueryToQueue {
     const {playlistLimit, queueAddResponseEphemeral} = settings;
 
     await interaction.deferReply({ephemeral: queueAddResponseEphemeral});
-    await interaction.editReply('looking that up...');
+    await interaction.editReply('Looking that up...');
     debug(`Queue lookup started: guild=${guildId} query=${query}`);
 
     let [newSongs, extraMsg] = await this.getSongs.getSongs(query, playlistLimit, shouldSplitChapters);
     debug(`Queue lookup finished: guild=${guildId} songs=${newSongs.length}`);
 
     if (newSongs.length === 0) {
-      throw new Error('no songs found');
+      throw new Error('No songs found.');
     }
 
     if (shuffleAdditions) {
@@ -91,13 +91,13 @@ export default class AddQueryToQueue {
     let statusMsg = '';
 
     if (player.voiceConnection === null) {
-      await interaction.editReply(`joining **${targetVoiceChannel.name}**...`);
+      await interaction.editReply(`Joining **${targetVoiceChannel.name}**...`);
       debug(`Voice join started: guild=${guildId} channel=${targetVoiceChannel.id}`);
       await player.connect(targetVoiceChannel);
       debug(`Voice join finished: guild=${guildId} channel=${targetVoiceChannel.id}`);
 
       // Resume / start playback
-      await interaction.editReply('starting playback...');
+      await interaction.editReply('Starting playback...');
       debug(`Playback start requested: guild=${guildId} song=${firstSong.url}`);
       await player.play();
       debug(`Playback started: guild=${guildId} song=${firstSong.url}`);
@@ -118,7 +118,7 @@ export default class AddQueryToQueue {
       try {
         await player.forward(1);
       } catch (_: unknown) {
-        throw new Error('no song to skip to');
+        throw new Error('No song to skip to.');
       }
     }
 
@@ -136,9 +136,9 @@ export default class AddQueryToQueue {
     }
 
     if (newSongs.length === 1) {
-      await interaction.editReply(`u betcha, **${firstSong.title}** added to the${addToFrontOfQueue ? ' front of the' : ''} queue${skipCurrentTrack ? 'and current track skipped' : ''}${extraMsg}`);
+      await interaction.editReply(`Added **${firstSong.title}** to the${addToFrontOfQueue ? ' front of the' : ''} queue${skipCurrentTrack ? ' and skipped the current track' : ''}${extraMsg}.`);
     } else {
-      await interaction.editReply(`u betcha, **${firstSong.title}** and ${newSongs.length - 1} other songs were added to the queue${skipCurrentTrack ? 'and current track skipped' : ''}${extraMsg}`);
+      await interaction.editReply(`Added **${firstSong.title}** and ${newSongs.length - 1} other songs to the queue${skipCurrentTrack ? ' and skipped the current track' : ''}${extraMsg}.`);
     }
   }
 

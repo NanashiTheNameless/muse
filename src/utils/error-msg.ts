@@ -1,11 +1,11 @@
 export default (error?: string | Error): string => {
-  let str = 'unknown error';
+  let str = 'Unknown error.';
 
   if (error) {
     if (typeof error === 'string') {
-      str = `🚫 ope: ${error}`;
+      str = `🚫 Error: ${error}`;
     } else if (error instanceof Error) {
-      str = `🚫 ope: ${error.message}`;
+      str = `🚫 Error: ${error.message}`;
     }
   }
 

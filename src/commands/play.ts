@@ -24,7 +24,7 @@ export default class implements Command {
 
     this.slashCommand = new SlashCommandBuilder()
       .setName('play')
-      .setDescription('play a song')
+      .setDescription('Play a song')
       .addStringOption(option => option
         .setName('query')
         .setDescription('YouTube URL or search query')
@@ -32,16 +32,16 @@ export default class implements Command {
         .setRequired(true))
       .addBooleanOption(option => option
         .setName('immediate')
-        .setDescription('add track to the front of the queue'))
+        .setDescription('Add track to the front of the queue'))
       .addBooleanOption(option => option
         .setName('shuffle')
-        .setDescription('shuffle the input if you\'re adding multiple tracks'))
+        .setDescription('Shuffle the input if you\'re adding multiple tracks'))
       .addBooleanOption(option => option
         .setName('split')
-        .setDescription('if a track has chapters, split it'))
+        .setDescription('If a track has chapters, split it'))
       .addBooleanOption(option => option
         .setName('skip')
-        .setDescription('skip the currently playing track'));
+        .setDescription('Skip the currently playing track'));
   }
 
   public async execute(interaction: ChatInputCommandInteraction): Promise<void> {

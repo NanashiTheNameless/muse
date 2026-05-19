@@ -36,6 +36,35 @@ export interface YtDlpUpdateResult {
   readonly error?: string;
 }
 
+interface YtDlpExtractAttempt {
+  readonly label: string;
+  readonly format: string;
+  readonly sort?: string;
+  readonly extractorArgs?: string;
+}
+
+const YT_DLP_EXTRACT_ATTEMPTS: YtDlpExtractAttempt[] = [
+  {
+    label: 'preferred audio',
+    format: 'ba/bestaudio/b/best',
+    sort: 'proto:https',
+    extractorArgs: 'youtube:player_client=android_vr,default,-ios',
+  },
+  {
+    label: 'preferred audio without sort',
+    format: 'ba/bestaudio/b/best',
+    extractorArgs: 'youtube:player_client=android_vr,default,-ios',
+  },
+  {
+    label: 'default clients audio',
+    format: 'ba/bestaudio/b/best',
+  },
+  {
+    label: 'default clients best',
+    format: 'best',
+  },
+];
+
 const firstNonEmpty = (...values: Array<string | undefined>) => values
   .map(value => value?.trim())
   .find((value): value is string => Boolean(value));
@@ -78,6 +107,20 @@ const getYtDlpCookieArgs = () => {
 
   return cookiesPath ? ['--cookies', cookiesPath] : [];
 };
+
+const getYtDlpExtractArgs = (attempt: YtDlpExtractAttempt, videoIdOrUrl: string) => [
+  '--dump-single-json',
+  '--no-playlist',
+  '--skip-download',
+  '--no-warnings',
+  '--no-cache-dir',
+  ...getYtDlpCookieArgs(),
+  '-f',
+  attempt.format,
+  ...(attempt.sort ? ['-S', attempt.sort] : []),
+  ...(attempt.extractorArgs ? ['--extractor-args', attempt.extractorArgs] : []),
+  toYouTubeWatchUrl(videoIdOrUrl),
+];
 
 export const getYtDlpVersion = async (): Promise<string> => {
   const {stdout} = await execa(getExecutable(), ['--version'], {
@@ -251,48 +294,44 @@ export const updateYtDlp = async (): Promise<YtDlpUpdateResult> => {
   };
 };
 
+const extractYouTubeMediaSource = async (videoIdOrUrl: string, attempt: YtDlpExtractAttempt): Promise<YtDlpMediaSource> => {
+  const {stdout} = await execa(getExecutable(), getYtDlpExtractArgs(attempt, videoIdOrUrl), {
+    timeout: YT_DLP_EXTRACT_TIMEOUT_MS,
+  });
+
+  const response = JSON.parse(stdout) as YtDlpResponse;
+  const download = response.requested_downloads?.at(0) ?? response;
+
+  if (!download.url) {
+    throw new Error('yt-dlp did not return a playable media URL.');
+  }
+
+  return {
+    url: download.url,
+    headers: normalizeHeaders(download.http_headers ?? response.http_headers),
+    isLive: Boolean(response.is_live ?? (response.live_status === 'is_live')),
+  };
+};
+
 export const getYouTubeMediaSource = async (videoIdOrUrl: string): Promise<YtDlpMediaSource> => {
+  const errors: string[] = [];
+
+  for (const attempt of YT_DLP_EXTRACT_ATTEMPTS) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      return await extractYouTubeMediaSource(videoIdOrUrl, attempt);
+    } catch (error: unknown) {
+      errors.push(`${attempt.label}: ${getExecaErrorMessage(error)}`);
+    }
+  }
+
   try {
-    const {stdout} = await execa(getExecutable(), [
-      '--dump-single-json',
-      '--no-playlist',
-      '--skip-download',
-      '--no-warnings',
-      '--no-cache-dir',
-      ...getYtDlpCookieArgs(),
-      '-f',
-      'ba/bestaudio/b/best',
-      '-S',
-      'proto:https',
-      '--extractor-args',
-      'youtube:player_client=android_vr,default,-ios',
-      toYouTubeWatchUrl(videoIdOrUrl),
-    ], {
-      timeout: YT_DLP_EXTRACT_TIMEOUT_MS,
-    });
-
-    const response = JSON.parse(stdout) as YtDlpResponse;
-    const download = response.requested_downloads?.at(0) ?? response;
-
-    if (!download.url) {
-      throw new Error('yt-dlp did not return a playable media URL.');
-    }
-
-    return {
-      url: download.url,
-      headers: normalizeHeaders(download.http_headers ?? response.http_headers),
-      isLive: Boolean(response.is_live ?? (response.live_status === 'is_live')),
-    };
+    throw new Error(errors.join(' | '));
   } catch (error: unknown) {
-    if (isExecaError(error)) {
-      const detail = error.stderr?.trim() ?? error.shortMessage ?? 'Unknown yt-dlp error';
-      throw new Error(`yt-dlp failed to extract media: ${detail}`);
-    }
-
     if (error instanceof SyntaxError) {
       throw new Error('yt-dlp returned an invalid response.');
     }
 
-    throw error;
+    throw new Error(`yt-dlp failed to extract media: ${getExecaErrorMessage(error)}`);
   }
 };

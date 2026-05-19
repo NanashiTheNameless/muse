@@ -9,81 +9,81 @@ import {getGuildSettings} from '../utils/get-guild-settings.js';
 export default class implements Command {
   public readonly slashCommand = new SlashCommandBuilder()
     .setName('config')
-    .setDescription('configure bot settings')
+    .setDescription('Configure bot settings')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild.toString())
     .addSubcommand(subcommand => subcommand
       .setName('set-playlist-limit')
-      .setDescription('set the maximum number of tracks that can be added from a playlist')
+      .setDescription('Set the maximum number of tracks that can be added from a playlist')
       .addIntegerOption(option => option
         .setName('limit')
-        .setDescription('maximum number of tracks')
+        .setDescription('Maximum number of tracks')
         .setRequired(true)))
     .addSubcommand(subcommand => subcommand
       .setName('set-wait-after-queue-empties')
-      .setDescription('set the time to wait before leaving the voice channel when queue empties')
+      .setDescription('Set the time to wait before leaving the voice channel when queue empties')
       .addIntegerOption(option => option
         .setName('delay')
-        .setDescription('delay in seconds (set to 0 to never leave)')
+        .setDescription('Delay in seconds (set to 0 to never leave)')
         .setRequired(true)
         .setMinValue(0)))
     .addSubcommand(subcommand => subcommand
       .setName('set-leave-if-no-listeners')
-      .setDescription('set whether to leave when all other participants leave')
+      .setDescription('Set whether to leave when all other participants leave')
       .addBooleanOption(option => option
         .setName('value')
-        .setDescription('whether to leave when everyone else leaves')
+        .setDescription('Whether to leave when everyone else leaves')
         .setRequired(true)))
     .addSubcommand(subcommand => subcommand
       .setName('set-queue-add-response-hidden')
-      .setDescription('set whether bot responses to queue additions are only displayed to the requester')
+      .setDescription('Set whether bot responses to queue additions are only displayed to the requester')
       .addBooleanOption(option => option
         .setName('value')
-        .setDescription('whether bot responses to queue additions are only displayed to the requester')
+        .setDescription('Whether bot responses to queue additions are only displayed to the requester')
         .setRequired(true)))
     .addSubcommand(subcommand => subcommand
       .setName('set-reduce-vol-when-voice')
-      .setDescription('set whether to turn down the volume when people speak')
+      .setDescription('Set whether to turn down the volume when people speak')
       .addBooleanOption(option => option
         .setName('value')
-        .setDescription('whether to turn down the volume when people speak')
+        .setDescription('Whether to turn down the volume when people speak')
         .setRequired(true)))
     .addSubcommand(subcommand => subcommand
       .setName('set-reduce-vol-when-voice-target')
-      .setDescription('set the target volume when people speak')
+      .setDescription('Set the target volume when people speak')
       .addIntegerOption(option => option
         .setName('volume')
-        .setDescription('volume percentage (0 is muted, 100 is max & default)')
+        .setDescription('Volume percentage (0 is muted, 100 is max & default)')
         .setMinValue(0)
         .setMaxValue(100)
         .setRequired(true)))
     .addSubcommand(subcommand => subcommand
       .setName('set-auto-announce-next-song')
-      .setDescription('set whether to announce the next song in the queue automatically')
+      .setDescription('Set whether to announce the next song in the queue automatically')
       .addBooleanOption(option => option
         .setName('value')
-        .setDescription('whether to announce the next song in the queue automatically')
+        .setDescription('Whether to announce the next song in the queue automatically')
         .setRequired(true)))
     .addSubcommand(subcommand => subcommand
       .setName('set-default-volume')
-      .setDescription('set default volume used when entering the voice channel')
+      .setDescription('Set default volume used when entering the voice channel')
       .addIntegerOption(option => option
         .setName('level')
-        .setDescription('volume percentage (0 is muted, 100 is max & default)')
+        .setDescription('Volume percentage (0 is muted, 100 is max & default)')
         .setMinValue(0)
         .setMaxValue(100)
         .setRequired(true)))
     .addSubcommand(subcommand => subcommand
       .setName('set-default-queue-page-size')
-      .setDescription('set the default page size of the /queue command')
+      .setDescription('Set the default page size of the /queue command')
       .addIntegerOption(option => option
         .setName('page-size')
-        .setDescription('page size of the /queue command')
+        .setDescription('Page size of the /queue command')
         .setMinValue(1)
         .setMaxValue(30)
         .setRequired(true)))
     .addSubcommand(subcommand => subcommand
       .setName('get')
-      .setDescription('show all settings'));
+      .setDescription('Show all settings'));
 
   async execute(interaction: ChatInputCommandInteraction) {
     // Ensure guild settings exist before trying to update
@@ -94,7 +94,7 @@ export default class implements Command {
         const limit: number = interaction.options.getInteger('limit')!;
 
         if (limit < 1) {
-          throw new Error('invalid limit');
+          throw new Error('Invalid limit.');
         }
 
         await prisma.setting.update({
@@ -106,7 +106,7 @@ export default class implements Command {
           },
         });
 
-        await interaction.reply('👍 limit updated');
+        await interaction.reply('Limit updated.');
 
         break;
       }
@@ -123,7 +123,7 @@ export default class implements Command {
           },
         });
 
-        await interaction.reply('👍 wait delay updated');
+        await interaction.reply('Wait delay updated.');
 
         break;
       }
@@ -140,7 +140,7 @@ export default class implements Command {
           },
         });
 
-        await interaction.reply('👍 leave setting updated');
+        await interaction.reply('Leave setting updated.');
 
         break;
       }
@@ -157,7 +157,7 @@ export default class implements Command {
           },
         });
 
-        await interaction.reply('👍 queue add notification setting updated');
+        await interaction.reply('Queue add notification setting updated.');
 
         break;
       }
@@ -174,7 +174,7 @@ export default class implements Command {
           },
         });
 
-        await interaction.reply('👍 auto announce setting updated');
+        await interaction.reply('Auto announce setting updated.');
 
         break;
       }
@@ -191,7 +191,7 @@ export default class implements Command {
           },
         });
 
-        await interaction.reply('👍 volume setting updated');
+        await interaction.reply('Volume setting updated.');
 
         break;
       }
@@ -208,7 +208,7 @@ export default class implements Command {
           },
         });
 
-        await interaction.reply('👍 default queue page size updated');
+        await interaction.reply('Default queue page size updated.');
 
         break;
       }
@@ -225,7 +225,7 @@ export default class implements Command {
           },
         });
 
-        await interaction.reply('👍 turn down volume setting updated');
+        await interaction.reply('Turn down volume setting updated.');
 
         break;
       }
@@ -242,7 +242,7 @@ export default class implements Command {
           },
         });
 
-        await interaction.reply('👍 turn down volume target setting updated');
+        await interaction.reply('Turn down volume target setting updated.');
 
         break;
       }
@@ -255,14 +255,14 @@ export default class implements Command {
         const settingsToShow = {
           'Playlist Limit': config.playlistLimit,
           'Wait before leaving after queue empty': config.secondsToWaitAfterQueueEmpties === 0
-            ? 'never leave'
+            ? 'Never leave'
             : `${config.secondsToWaitAfterQueueEmpties}s`,
-          'Leave if there are no listeners': config.leaveIfNoListeners ? 'yes' : 'no',
-          'Auto announce next song in queue': config.autoAnnounceNextSong ? 'yes' : 'no',
-          'Add to queue reponses show for requester only': config.autoAnnounceNextSong ? 'yes' : 'no',
+          'Leave if there are no listeners': config.leaveIfNoListeners ? 'Yes' : 'No',
+          'Auto announce next song in queue': config.autoAnnounceNextSong ? 'Yes' : 'No',
+          'Add to queue reponses show for requester only': config.autoAnnounceNextSong ? 'Yes' : 'No',
           'Default Volume': config.defaultVolume,
           'Default queue page size': config.defaultQueuePageSize,
-          'Reduce volume when people speak': config.turnDownVolumeWhenPeopleSpeak ? 'yes' : 'no',
+          'Reduce volume when people speak': config.turnDownVolumeWhenPeopleSpeak ? 'Yes' : 'No',
         };
 
         let description = '';
@@ -278,7 +278,7 @@ export default class implements Command {
       }
 
       default:
-        throw new Error('unknown subcommand');
+        throw new Error('Unknown subcommand.');
     }
   }
 }

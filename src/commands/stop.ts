@@ -10,7 +10,7 @@ import Command from './index.js';
 export default class implements Command {
   public readonly slashCommand = new SlashCommandBuilder()
     .setName('stop')
-    .setDescription('stop playback, disconnect, and clear all songs in the queue');
+    .setDescription('Stop playback, disconnect, and clear all songs in the queue');
 
   public requiresVC = true;
 
@@ -24,14 +24,14 @@ export default class implements Command {
     const player = this.playerManager.get(interaction.guild!.id);
 
     if (!player.voiceConnection) {
-      throw new Error('not connected');
+      throw new Error('Not connected.');
     }
 
     if (player.status !== STATUS.PLAYING) {
-      throw new Error('not currently playing');
+      throw new Error('Not currently playing.');
     }
 
     player.stop();
-    await interaction.reply('u betcha, stopped');
+    await interaction.reply('Stopped playback.');
   }
 }

@@ -12,7 +12,7 @@ import {ChatInputCommandInteraction, GuildMember} from 'discord.js';
 export default class implements Command {
   public readonly slashCommand = new SlashCommandBuilder()
     .setName('resume')
-    .setDescription('resume playback');
+    .setDescription('Resume playback');
 
   public requiresVC = true;
 
@@ -26,19 +26,19 @@ export default class implements Command {
     const player = this.playerManager.get(interaction.guild!.id);
     const [targetVoiceChannel] = getMemberVoiceChannel(interaction.member as GuildMember) ?? getMostPopularVoiceChannel(interaction.guild!);
     if (player.status === STATUS.PLAYING) {
-      throw new Error('already playing, give me a song name');
+      throw new Error('Already playing. Give me a song name.');
     }
 
     // Must be resuming play
     if (!player.getCurrent()) {
-      throw new Error('nothing to play');
+      throw new Error('Nothing to play.');
     }
 
     await player.connect(targetVoiceChannel);
     await player.play();
 
     await interaction.reply({
-      content: 'the stop-and-go light is now green',
+      content: 'Resumed playback.',
       embeds: [buildPlayingMessageEmbed(player)],
     });
   }

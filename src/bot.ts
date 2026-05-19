@@ -64,13 +64,13 @@ export default class {
           }
 
           if (!interaction.guild) {
-            await interaction.reply(errorMsg('you can\'t use this bot in a DM'));
+            await interaction.reply(errorMsg('You cannot use this bot in a DM.'));
             return;
           }
 
           const requiresVC = command.requiresVC instanceof Function ? command.requiresVC(interaction) : command.requiresVC;
           if (requiresVC && interaction.member && !isUserInVoice(interaction.guild, interaction.member.user as User)) {
-            await interaction.reply({content: errorMsg('gotta be in a voice channel'), ephemeral: true});
+            await interaction.reply({content: errorMsg('You need to be in a voice channel.'), ephemeral: true});
             return;
           }
 

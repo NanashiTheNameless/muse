@@ -29,7 +29,7 @@ export default class {
       if (songs) {
         newSongs.push(...songs);
       } else {
-        throw new Error('that doesn\'t exist');
+        throw new Error('That does not exist.');
       }
 
       return [newSongs, extraMsg];
@@ -52,13 +52,13 @@ export default class {
         if (songs) {
           newSongs.push(...songs);
         } else {
-          throw new Error('that doesn\'t exist');
+          throw new Error('That does not exist.');
         }
       } else if (url.searchParams.get('list')) {
         // YouTube playlist
         newSongs.push(...await this.youtubePlaylist(url.searchParams.get('list')!, shouldSplitChapters));
       } else {
-        throw new Error('that doesn\'t exist');
+        throw new Error('That does not exist.');
       }
     } else {
       const song = await this.httpLiveStream(query);
@@ -66,7 +66,7 @@ export default class {
       if (song) {
         newSongs.push(song);
       } else {
-        throw new Error('that doesn\'t exist');
+        throw new Error('That does not exist.');
       }
     }
 

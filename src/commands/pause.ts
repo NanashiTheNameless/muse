@@ -10,7 +10,7 @@ import Command from './index.js';
 export default class implements Command {
   public readonly slashCommand = new SlashCommandBuilder()
     .setName('pause')
-    .setDescription('pause the current song');
+    .setDescription('Pause the current song');
 
   public requiresVC = true;
 
@@ -24,10 +24,10 @@ export default class implements Command {
     const player = this.playerManager.get(interaction.guild!.id);
 
     if (player.status !== STATUS.PLAYING) {
-      throw new Error('not currently playing');
+      throw new Error('Not currently playing.');
     }
 
     player.pause();
-    await interaction.reply('the stop-and-go light is now red');
+    await interaction.reply('Paused playback.');
   }
 }
