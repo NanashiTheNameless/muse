@@ -9,7 +9,7 @@ ENV MUSE_BUNDLED_YT_DLP_PATH=/opt/yt-dlp/bin/yt-dlp
 
 # openssl will be a required package if base is updated to 18.16+ due to node:*-slim base distro change
 # https://github.com/prisma/prisma/issues/19729#issuecomment-1591270599
-# Install ffmpeg/ffprobe, yt-dlp, yt-dlp-ejs, and deno runtime dependencies
+# Install ffmpeg/ffprobe and yt-dlp runtime dependencies
 RUN --mount=type=cache,target=/root/.cache/pip \
     apt-get update \
     && apt-get install --no-install-recommends -y \
@@ -36,22 +36,39 @@ RUN --mount=type=cache,target=/root/.cache/pip \
         /opt/yt-dlp/bin/pip install yt-dlp; \
     fi \
     && ln -s /opt/yt-dlp/bin/yt-dlp /usr/local/bin/yt-dlp \
-    && npm install -g --omit=dev yt-dlp-ejs \
-    && export DENO_INSTALL=/opt/deno \
-    && if [ -n "${DENO_VERSION}" ]; then \
-        deno_version="${DENO_VERSION#v}"; \
-        curl -fsSL https://deno.land/install.sh | sh -s "v${deno_version}"; \
-      else \
-        curl -fsSL https://deno.land/install.sh | sh; \
-      fi \
-    && ln -s /opt/deno/bin/deno /usr/local/bin/deno \
-    && command -v ffmpeg \
-    && command -v ffprobe \
-    && command -v yt-dlp \
-    && command -v deno \
     && apt-get autoclean \
     && apt-get autoremove \
     && rm -rf /var/lib/apt/lists/*
+
+# Install yt-dlp-ejs separately for clearer failure logs in CI.
+RUN npm install -g --omit=dev yt-dlp-ejs
+
+# Install Deno from official release artifacts (more reliable than install.sh in CI/buildx).
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    case "${arch}" in \
+      amd64) deno_target='x86_64-unknown-linux-gnu' ;; \
+      arm64) deno_target='aarch64-unknown-linux-gnu' ;; \
+      *) echo "Unsupported architecture for Deno: ${arch}" >&2; exit 1 ;; \
+    esac; \
+    if [ -n "${DENO_VERSION}" ]; then \
+      deno_version="${DENO_VERSION#v}"; \
+    else \
+      deno_version="$(curl -fsSL https://dl.deno.land/release-latest.txt)"; \
+    fi; \
+    mkdir -p /opt/deno/bin; \
+    curl -fsSL "https://dl.deno.land/release/v${deno_version}/deno-${deno_target}.zip" -o /tmp/deno.zip; \
+    unzip -q /tmp/deno.zip -d /opt/deno/bin; \
+    chmod +x /opt/deno/bin/deno; \
+    ln -sf /opt/deno/bin/deno /usr/local/bin/deno; \
+    rm -f /tmp/deno.zip
+
+# Verify required runtime tools are available in the final image.
+RUN command -v ffmpeg \
+    && command -v ffprobe \
+    && command -v yt-dlp \
+    && command -v yt-dlp-ejs \
+    && command -v deno
 
 # Install dependencies
 FROM base AS dependencies
