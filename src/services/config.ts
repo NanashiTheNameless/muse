@@ -28,6 +28,7 @@ const CONFIG_MAP = {
   SPONSORBLOCK_TIMEOUT: parseInt(process.env.SPONSORBLOCK_TIMEOUT ?? '5', 10),
   YT_DLP_PATH: firstNonEmpty(process.env.YT_DLP_PATH, process.env.MUSE_BUNDLED_YT_DLP_PATH) ?? 'yt-dlp',
   YT_DLP_AUTO_UPDATE: process.env.YT_DLP_AUTO_UPDATE === 'true',
+  YT_DLP_COOKIES_PATH: process.env.YT_DLP_COOKIES_PATH ?? '',
 } as const;
 
 const BOT_ACTIVITY_TYPE_MAP = {
@@ -53,6 +54,7 @@ export default class Config {
   readonly SPONSORBLOCK_TIMEOUT!: number;
   readonly YT_DLP_PATH!: string;
   readonly YT_DLP_AUTO_UPDATE!: boolean;
+  readonly YT_DLP_COOKIES_PATH!: string;
 
   constructor() {
     for (const [key, value] of Object.entries(CONFIG_MAP)) {

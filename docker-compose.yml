@@ -6,6 +6,8 @@ services:
     restart: unless-stopped
     volumes:
       - ./data:/data
+      # Uncomment when YT_DLP_COOKIES_PATH=/cookies.txt is set in .env.
+      # - ./cookies.txt:/cookies.txt:ro
     env_file:
       - .env
     environment:

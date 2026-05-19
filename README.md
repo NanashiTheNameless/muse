@@ -97,6 +97,8 @@ Muse now uses `yt-dlp` to resolve playable YouTube media URLs. In Docker, the im
 
 Muse logs `YT_DLP_VERSION` on startup. Set `YT_DLP_AUTO_UPDATE=true` to make Muse try to update the configured `yt-dlp` installation before connecting to Discord. This works best with the Docker image's bundled virtualenv, or when `YT_DLP_PATH` points at a virtualenv or standalone `yt-dlp` executable that Muse can update.
 
+If YouTube asks `yt-dlp` to sign in or confirm it is not a bot, export YouTube cookies to a Netscape-format cookies file, mount it into the container, and set `YT_DLP_COOKIES_PATH` to that path. For Docker Compose, place `cookies.txt` next to `docker-compose.yml`, uncomment the `./cookies.txt:/cookies.txt:ro` volume, and set `YT_DLP_COOKIES_PATH=/cookies.txt` in `.env`.
+
 The `ghcr.io/museofficial/muse:yt-dlp-latest` image is rebuilt on a schedule from the latest Muse release with the newest `yt-dlp` published to PyPI. Versioned refresh tags are also published as `:<muse-version>-yt-dlp-<yt-dlp-version>`.
 
 ### SponsorBlock

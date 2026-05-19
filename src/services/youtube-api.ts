@@ -8,7 +8,6 @@ import KeyValueCacheProvider from './key-value-cache.js';
 import {ONE_HOUR_IN_SECONDS, ONE_MINUTE_IN_SECONDS} from '../utils/constants.js';
 import {parseTime} from '../utils/time.js';
 import getYouTubeID from 'get-youtube-id';
-import {getYouTubeVideoMetadata, searchYouTubeVideoMetadata, YtDlpVideoMetadata} from '../utils/yt-dlp.js';
 
 interface VideoDetailsResponse {
   id: string;
@@ -51,6 +50,16 @@ interface PlaylistItem {
   };
 }
 
+interface SearchResponse {
+  items: SearchItem[];
+}
+
+interface SearchItem {
+  id: {
+    videoId: string;
+  };
+}
+
 @injectable()
 export default class {
   private readonly youtubeKey: string;
@@ -71,9 +80,39 @@ export default class {
   }
 
   async search(query: string, shouldSplitChapters: boolean): Promise<SongMetadata[]> {
-    const video = await searchYouTubeVideoMetadata(query);
+    const params = {
+      searchParams: {
+        part: 'snippet',
+        q: query,
+        type: 'video',
+        maxResults: '10',
+      },
+    };
 
-    return this.getMetadataFromYtDlpVideo({video, shouldSplitChapters});
+    const {items} = await this.cache.wrap(
+      async () => this.got('search', params).json() as Promise<SearchResponse>,
+      params,
+      {
+        expiresIn: ONE_HOUR_IN_SECONDS,
+      },
+    );
+
+    const ids = items
+      .map(item => item.id.videoId)
+      .filter(Boolean);
+
+    if (ids.length === 0) {
+      return [];
+    }
+
+    const videos = await this.getVideosByID(ids);
+    const firstVideo = ids
+      .map(id => videos.find(video => video.id === id))
+      .find(Boolean);
+
+    return firstVideo
+      ? this.getMetadataFromVideo({video: firstVideo, shouldSplitChapters})
+      : [];
   }
 
   async getVideo(url: string, shouldSplitChapters: boolean): Promise<SongMetadata[]> {
@@ -91,12 +130,6 @@ export default class {
     }
 
     return this.getMetadataFromVideo({video, shouldSplitChapters});
-  }
-
-  async getVideoDirect(url: string, shouldSplitChapters: boolean): Promise<SongMetadata[]> {
-    const video = await getYouTubeVideoMetadata(url);
-
-    return this.getMetadataFromYtDlpVideo({video, shouldSplitChapters});
   }
 
   async getPlaylist(listId: string, shouldSplitChapters: boolean): Promise<SongMetadata[]> {
@@ -204,49 +237,6 @@ export default class {
     }
 
     const chapters = this.parseChaptersFromDescription(video.snippet.description, base.length);
-
-    if (!chapters) {
-      return [base];
-    }
-
-    const tracks: SongMetadata[] = [];
-
-    for (const [label, {offset, length}] of chapters) {
-      tracks.push({
-        ...base,
-        offset,
-        length,
-        title: `${label} (${base.title})`,
-      });
-    }
-
-    return tracks;
-  }
-
-  private getMetadataFromYtDlpVideo({
-    video,
-    shouldSplitChapters,
-  }: {
-    video: YtDlpVideoMetadata;
-    shouldSplitChapters?: boolean;
-  }): SongMetadata[] {
-    const base: SongMetadata = {
-      source: MediaSource.Youtube,
-      title: video.title,
-      artist: video.artist,
-      length: video.length,
-      offset: 0,
-      url: video.id,
-      playlist: null,
-      isLive: video.isLive,
-      thumbnailUrl: video.thumbnailUrl,
-    };
-
-    if (!shouldSplitChapters) {
-      return [base];
-    }
-
-    const chapters = this.parseChaptersFromDescription(video.description, base.length);
 
     if (!chapters) {
       return [base];

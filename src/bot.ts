@@ -1,6 +1,5 @@
 import {Client, Collection, User} from 'discord.js';
 import {inject, injectable} from 'inversify';
-import ora from 'ora';
 import {TYPES} from './types.js';
 import container from './inversify.config.js';
 import Command from './commands/index.js';
@@ -113,7 +112,7 @@ export default class {
       }
     });
 
-    const spinner = ora('📡 connecting to Discord...').start();
+    console.log('Connecting to Discord...');
 
     this.client.once('ready', async () => {
       debug(generateDependencyReport());
@@ -121,13 +120,13 @@ export default class {
       // Update commands
       const rest = new REST({version: '10'}).setToken(this.config.DISCORD_TOKEN);
       if (this.shouldRegisterCommandsOnBot) {
-        spinner.text = '📡 updating commands on bot...';
+        console.log('Updating commands on bot...');
         await rest.put(
           Routes.applicationCommands(this.client.user!.id),
           {body: this.commandsByName.map(command => command.slashCommand.toJSON())},
         );
       } else {
-        spinner.text = '📡 updating commands in all guilds...';
+        console.log('Updating commands in all guilds...');
 
         await Promise.all([
           ...this.client.guilds.cache.map(async guild => {
@@ -155,7 +154,7 @@ export default class {
         status: this.config.BOT_STATUS,
       });
 
-      spinner.succeed(`Ready! Invite the bot with https://discordapp.com/oauth2/authorize?client_id=${this.client.user?.id ?? ''}&scope=bot%20applications.commands&permissions=36701184`);
+      console.log(`Ready! Invite the bot with https://discordapp.com/oauth2/authorize?client_id=${this.client.user?.id ?? ''}&scope=bot%20applications.commands&permissions=36701184`);
     });
 
     this.client.on('error', console.error);

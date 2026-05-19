@@ -12,6 +12,7 @@ import {SponsorBlock} from 'sponsorblock-api';
 import Config from './config.js';
 import KeyValueCacheProvider from './key-value-cache.js';
 import {ONE_HOUR_IN_SECONDS} from '../utils/constants.js';
+import debug from '../utils/debug.js';
 
 @injectable()
 export default class AddQueryToQueue {
@@ -57,8 +58,11 @@ export default class AddQueryToQueue {
     const {playlistLimit, queueAddResponseEphemeral} = settings;
 
     await interaction.deferReply({ephemeral: queueAddResponseEphemeral});
+    await interaction.editReply('looking that up...');
+    debug(`Queue lookup started: guild=${guildId} query=${query}`);
 
     let [newSongs, extraMsg] = await this.getSongs.getSongs(query, playlistLimit, shouldSplitChapters);
+    debug(`Queue lookup finished: guild=${guildId} songs=${newSongs.length}`);
 
     if (newSongs.length === 0) {
       throw new Error('no songs found');
@@ -69,7 +73,9 @@ export default class AddQueryToQueue {
     }
 
     if (this.config.ENABLE_SPONSORBLOCK) {
+      debug(`SponsorBlock lookup started: guild=${guildId} songs=${newSongs.length}`);
       newSongs = await Promise.all(newSongs.map(this.skipNonMusicSegments.bind(this)));
+      debug(`SponsorBlock lookup finished: guild=${guildId} songs=${newSongs.length}`);
     }
 
     newSongs.forEach(song => {
@@ -85,10 +91,16 @@ export default class AddQueryToQueue {
     let statusMsg = '';
 
     if (player.voiceConnection === null) {
+      await interaction.editReply(`joining **${targetVoiceChannel.name}**...`);
+      debug(`Voice join started: guild=${guildId} channel=${targetVoiceChannel.id}`);
       await player.connect(targetVoiceChannel);
+      debug(`Voice join finished: guild=${guildId} channel=${targetVoiceChannel.id}`);
 
       // Resume / start playback
+      await interaction.editReply('starting playback...');
+      debug(`Playback start requested: guild=${guildId} song=${firstSong.url}`);
       await player.play();
+      debug(`Playback started: guild=${guildId} song=${firstSong.url}`);
 
       if (wasPlayingSong) {
         statusMsg = 'resuming playback';

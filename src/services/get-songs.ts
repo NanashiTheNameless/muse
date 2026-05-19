@@ -47,7 +47,7 @@ export default class {
       const videoId = getYouTubeID(url.href);
 
       if (videoId) {
-        const songs = await this.youtubeVideoDirect(url.href, shouldSplitChapters);
+        const songs = await this.youtubeVideo(url.href, shouldSplitChapters);
 
         if (songs) {
           newSongs.push(...songs);
@@ -77,8 +77,8 @@ export default class {
     return this.youtubeAPI.search(query, shouldSplitChapters);
   }
 
-  private async youtubeVideoDirect(url: string, shouldSplitChapters: boolean): Promise<SongMetadata[]> {
-    return this.youtubeAPI.getVideoDirect(url, shouldSplitChapters);
+  private async youtubeVideo(url: string, shouldSplitChapters: boolean): Promise<SongMetadata[]> {
+    return this.youtubeAPI.getVideo(url, shouldSplitChapters);
   }
 
   private async youtubePlaylist(listId: string, shouldSplitChapters: boolean): Promise<SongMetadata[]> {
