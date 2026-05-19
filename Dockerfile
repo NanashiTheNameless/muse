@@ -40,8 +40,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     && apt-get autoremove \
     && rm -rf /var/lib/apt/lists/*
 
-# Install yt-dlp-ejs separately for clearer failure logs in CI.
-RUN npm install -g --omit=dev yt-dlp-ejs
+# Note: yt-dlp is installed via the Python wheel above; no npm wrapper required.
 
 # Install Deno from official release artifacts (more reliable than install.sh in CI/buildx).
 RUN set -eux; \
@@ -67,7 +66,6 @@ RUN set -eux; \
 RUN command -v ffmpeg \
     && command -v ffprobe \
     && command -v yt-dlp \
-    && command -v yt-dlp-ejs \
     && command -v deno
 
 # Install dependencies

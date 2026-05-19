@@ -109,8 +109,7 @@ yt-dlp:
 Docker images built from this repo include:
 
 - `ffmpeg` and `ffprobe`
-- `yt-dlp` (master build by default)
-- `yt-dlp-ejs`
+ - `yt-dlp` (master build by default)
 - `deno`
 
 ## Cookies for YouTube Bot Checks

@@ -23,8 +23,8 @@ const RUNTIME_TOOLS: RuntimeTool[] = [
     args: ['--version'],
   },
   {
-    label: 'YT_DLP_EJS_VERSION',
-    executable: 'yt-dlp-ejs',
+    label: 'YT_DLP_VERSION',
+    executable: 'yt-dlp',
     args: ['--version'],
   },
 ];
