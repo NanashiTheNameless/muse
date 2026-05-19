@@ -4,7 +4,6 @@ import {injectable} from 'inversify';
 import path from 'path';
 import xbytes from 'xbytes';
 import {ConditionalKeys} from 'type-fest';
-import {ActivityType, PresenceStatusData} from 'discord.js';
 dotenv.config({path: process.env.ENV_FILE ?? path.resolve(process.cwd(), '.env')});
 
 export const DATA_DIR = path.resolve(process.env.DATA_DIR ? process.env.DATA_DIR : './data');
@@ -20,22 +19,12 @@ const CONFIG_MAP = {
   DATA_DIR,
   CACHE_DIR: path.join(DATA_DIR, 'cache'),
   CACHE_LIMIT_IN_BYTES: xbytes.parseSize(process.env.CACHE_LIMIT ?? '2GB'),
-  BOT_STATUS: process.env.BOT_STATUS ?? 'online',
-  BOT_ACTIVITY_TYPE: process.env.BOT_ACTIVITY_TYPE ?? 'LISTENING',
-  BOT_ACTIVITY_URL: process.env.BOT_ACTIVITY_URL ?? '',
-  BOT_ACTIVITY: process.env.BOT_ACTIVITY ?? 'music',
   ENABLE_SPONSORBLOCK: process.env.ENABLE_SPONSORBLOCK === 'true',
   SPONSORBLOCK_TIMEOUT: parseInt(process.env.SPONSORBLOCK_TIMEOUT ?? '5', 10),
   YT_DLP_PATH: firstNonEmpty(process.env.YT_DLP_PATH, process.env.MUSE_BUNDLED_YT_DLP_PATH) ?? 'yt-dlp',
-  YT_DLP_AUTO_UPDATE: process.env.YT_DLP_AUTO_UPDATE === 'true',
+  YT_DLP_AUTO_UPDATE: process.env.YT_DLP_AUTO_UPDATE !== 'false',
   YT_DLP_COOKIES_PATH: process.env.YT_DLP_COOKIES_PATH ?? '',
-} as const;
-
-const BOT_ACTIVITY_TYPE_MAP = {
-  PLAYING: ActivityType.Playing,
-  LISTENING: ActivityType.Listening,
-  WATCHING: ActivityType.Watching,
-  STREAMING: ActivityType.Streaming,
+  INSTANCE_OWNER_ID: process.env.INSTANCE_OWNER_ID ?? '',
 } as const;
 
 @injectable()
@@ -46,26 +35,18 @@ export default class Config {
   readonly DATA_DIR!: string;
   readonly CACHE_DIR!: string;
   readonly CACHE_LIMIT_IN_BYTES!: number;
-  readonly BOT_STATUS!: PresenceStatusData;
-  readonly BOT_ACTIVITY_TYPE!: Exclude<ActivityType, ActivityType.Custom>;
-  readonly BOT_ACTIVITY_URL!: string;
-  readonly BOT_ACTIVITY!: string;
   readonly ENABLE_SPONSORBLOCK!: boolean;
   readonly SPONSORBLOCK_TIMEOUT!: number;
   readonly YT_DLP_PATH!: string;
   readonly YT_DLP_AUTO_UPDATE!: boolean;
   readonly YT_DLP_COOKIES_PATH!: string;
+  readonly INSTANCE_OWNER_ID!: string;
 
   constructor() {
     for (const [key, value] of Object.entries(CONFIG_MAP)) {
       if (typeof value === 'undefined') {
         console.error(`Missing environment variable for ${key}`);
         process.exit(1);
-      }
-
-      if (key === 'BOT_ACTIVITY_TYPE') {
-        this[key] = BOT_ACTIVITY_TYPE_MAP[(value as string).toUpperCase() as keyof typeof BOT_ACTIVITY_TYPE_MAP];
-        continue;
       }
 
       if (typeof value === 'number') {

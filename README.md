@@ -93,10 +93,6 @@ Core paths and cache:
 Bot behavior:
 
 - `REGISTER_COMMANDS_ON_BOT` (`true`/`false`, default: `false`)
-- `BOT_STATUS` (`online`, `idle`, `dnd`)
-- `BOT_ACTIVITY_TYPE` (`PLAYING`, `LISTENING`, `WATCHING`, `STREAMING`)
-- `BOT_ACTIVITY`
-- `BOT_ACTIVITY_URL` (required for `STREAMING` activity)
 
 SponsorBlock:
 
@@ -106,8 +102,12 @@ SponsorBlock:
 yt-dlp:
 
 - `YT_DLP_PATH`
-- `YT_DLP_AUTO_UPDATE` (`true`/`false`)
+- `YT_DLP_AUTO_UPDATE` (default: `true`, set to `false` to disable)
 - `YT_DLP_COOKIES_PATH`
+
+Instance owner:
+
+- `INSTANCE_OWNER_ID` — Discord user ID that bypasses all bot permission checks. This user can use `/config` without Manage Server and run commands without being in a voice channel. Leave unset to disable.
 
 Docker images built from this repo include:
 

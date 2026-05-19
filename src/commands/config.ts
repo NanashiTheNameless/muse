@@ -1,16 +1,23 @@
 import {SlashCommandBuilder} from '@discordjs/builders';
-import {ChatInputCommandInteraction, EmbedBuilder, PermissionFlagsBits} from 'discord.js';
-import {injectable} from 'inversify';
+import {ChatInputCommandInteraction, EmbedBuilder, MessageFlags, PermissionFlagsBits, PermissionsBitField} from 'discord.js';
+import {inject, injectable} from 'inversify';
 import {prisma} from '../utils/db.js';
 import Command from './index.js';
 import {getGuildSettings} from '../utils/get-guild-settings.js';
+import {TYPES} from '../types.js';
+import Config from '../services/config.js';
 
 @injectable()
 export default class implements Command {
+  private readonly config: Config;
+
+  constructor(@inject(TYPES.Config) config: Config) {
+    this.config = config;
+  }
+
   public readonly slashCommand = new SlashCommandBuilder()
     .setName('config')
     .setDescription('Configure bot settings')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild.toString())
     .addSubcommand(subcommand => subcommand
       .setName('set-playlist-limit')
       .setDescription('Set the maximum number of tracks that can be added from a playlist')
@@ -86,6 +93,14 @@ export default class implements Command {
       .setDescription('Show all settings'));
 
   async execute(interaction: ChatInputCommandInteraction) {
+    const isInstanceOwner = this.config.INSTANCE_OWNER_ID !== '' && interaction.user.id === this.config.INSTANCE_OWNER_ID;
+    const hasManageGuild = (interaction.member?.permissions as PermissionsBitField | undefined)?.has(PermissionFlagsBits.ManageGuild) ?? false;
+
+    if (!isInstanceOwner && !hasManageGuild) {
+      await interaction.reply({content: 'You need the **Manage Server** permission to use this command.', flags: MessageFlags.Ephemeral});
+      return;
+    }
+
     // Ensure guild settings exist before trying to update
     await getGuildSettings(interaction.guild!.id);
 

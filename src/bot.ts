@@ -1,4 +1,4 @@
-import {Client, Collection, MessageFlags, User} from 'discord.js';
+import {ActivityType, Client, Collection, MessageFlags, User} from 'discord.js';
 import {inject, injectable} from 'inversify';
 import {TYPES} from './types.js';
 import container from './inversify.config.js';
@@ -68,8 +68,9 @@ export default class {
             return;
           }
 
+          const isInstanceOwner = this.config.INSTANCE_OWNER_ID !== '' && interaction.user.id === this.config.INSTANCE_OWNER_ID;
           const requiresVC = command.requiresVC instanceof Function ? command.requiresVC(interaction) : command.requiresVC;
-          if (requiresVC && interaction.member && !isUserInVoice(interaction.guild, interaction.member.user as User)) {
+          if (!isInstanceOwner && requiresVC && interaction.member && !isUserInVoice(interaction.guild, interaction.member.user as User)) {
             await interaction.reply({content: errorMsg('You need to be in a voice channel.'), flags: MessageFlags.Ephemeral});
             return;
           }
@@ -146,12 +147,12 @@ export default class {
       this.client.user!.setPresence({
         activities: [
           {
-            name: this.config.BOT_ACTIVITY,
-            type: this.config.BOT_ACTIVITY_TYPE,
-            url: this.config.BOT_ACTIVITY_URL === '' ? undefined : this.config.BOT_ACTIVITY_URL,
+            name: 'https://github.com/NanashiTheNameless/muse',
+            type: ActivityType.Streaming,
+            url: 'https://github.com/NanashiTheNameless/muse',
           },
         ],
-        status: this.config.BOT_STATUS,
+        status: 'online',
       });
 
       console.log(`Ready! Invite the bot with https://discordapp.com/oauth2/authorize?client_id=${this.client.user?.id ?? ''}&scope=bot%20applications.commands&permissions=36701184`);

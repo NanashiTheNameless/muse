@@ -79,6 +79,7 @@ export default class {
   private nowPlaying: QueuedSong | null = null;
   private playPositionInterval: NodeJS.Timeout | undefined;
   private lastSongURL = '';
+  private skipVotes = new Set<string>();
 
   private positionInSeconds = 0;
   private readonly fileCache: FileCacheProvider;
@@ -406,6 +407,7 @@ export default class {
       this.queuePosition += skip;
       this.positionInSeconds = 0;
       this.stopTrackingPosition();
+      this.skipVotes = new Set();
     } else {
       throw new Error('No songs in queue to forward to.');
     }
@@ -420,6 +422,7 @@ export default class {
       this.queuePosition--;
       this.positionInSeconds = 0;
       this.stopTrackingPosition();
+      this.skipVotes = new Set();
 
       if (this.status !== STATUS.PAUSED) {
         await this.play();
@@ -427,6 +430,14 @@ export default class {
     } else {
       throw new Error('No songs in queue to go back to.');
     }
+  }
+
+  addSkipVote(userId: string): void {
+    this.skipVotes.add(userId);
+  }
+
+  getSkipVotes(): ReadonlySet<string> {
+    return this.skipVotes;
   }
 
   getCurrent(): QueuedSong | null {
