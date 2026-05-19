@@ -1,6 +1,6 @@
 services:
   muse:
-    image: ghcr.io/NanashiTheNameless/muse:latest
+    image: ghcr.io/nanashithenameless/muse:latest
     restart: unless-stopped
     volumes:
       - ./data:/data
