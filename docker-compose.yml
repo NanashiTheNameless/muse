@@ -7,7 +7,8 @@ services:
     volumes:
       - ./data:/data
       # Uncomment when YT_DLP_COOKIES_PATH=/cookies.txt is set in .env.
-      # - ./cookies.txt:/cookies.txt:ro
+      # yt-dlp may refresh cookies, so this must be writable.
+      # - ./cookies.txt:/cookies.txt
     env_file:
       - .env
     environment:

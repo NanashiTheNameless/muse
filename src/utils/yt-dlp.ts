@@ -261,7 +261,7 @@ export const getYouTubeMediaSource = async (videoIdOrUrl: string): Promise<YtDlp
       '--no-cache-dir',
       ...getYtDlpCookieArgs(),
       '-f',
-      'bestaudio/best',
+      'ba/bestaudio/b/best',
       '-S',
       'proto:https',
       '--extractor-args',
