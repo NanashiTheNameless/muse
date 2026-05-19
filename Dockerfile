@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:22-bookworm-slim AS base
+FROM node:22-alpine AS base
 
 ARG YT_DLP_CHANNEL=master
 ARG YT_DLP_VERSION=
@@ -10,9 +10,7 @@ ENV MUSE_BUNDLED_YT_DLP_PATH=/opt/yt-dlp/bin/yt-dlp
 # openssl will be a required package if base is updated to 18.16+ due to node:*-slim base distro change
 # https://github.com/prisma/prisma/issues/19729#issuecomment-1591270599
 # Install ffmpeg/ffprobe and yt-dlp runtime dependencies
-RUN --mount=type=cache,target=/root/.cache/pip \
-    apt-get update \
-    && apt-get install --no-install-recommends -y \
+RUN apk add --no-cache \
     ffmpeg \
     tini \
     openssl \
@@ -20,7 +18,6 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     curl \
     unzip \
     python3 \
-    python3-venv \
     && python3 -m venv /opt/yt-dlp \
     && if [ "${YT_DLP_CHANNEL}" = "master" ]; then \
         if [ -n "${YT_DLP_VERSION}" ]; then \
@@ -35,19 +32,16 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     else \
         /opt/yt-dlp/bin/pip install yt-dlp; \
     fi \
-    && ln -s /opt/yt-dlp/bin/yt-dlp /usr/local/bin/yt-dlp \
-    && apt-get autoclean \
-    && apt-get autoremove \
-    && rm -rf /var/lib/apt/lists/*
+    && ln -s /opt/yt-dlp/bin/yt-dlp /usr/local/bin/yt-dlp
 
 # Note: yt-dlp is installed via the Python wheel above; no npm wrapper required.
 
 # Install Deno from official release artifacts (more reliable than install.sh in CI/buildx).
 RUN set -eux; \
-    arch="$(dpkg --print-architecture)"; \
+    arch="$(uname -m)"; \
     case "${arch}" in \
-      amd64) deno_target='x86_64-unknown-linux-gnu' ;; \
-      arm64) deno_target='aarch64-unknown-linux-gnu' ;; \
+      x86_64) deno_target='x86_64-unknown-linux-gnu' ;; \
+      aarch64) deno_target='aarch64-unknown-linux-gnu' ;; \
       *) echo "Unsupported architecture for Deno: ${arch}" >&2; exit 1 ;; \
     esac; \
     if [ -n "${DENO_VERSION}" ]; then \
@@ -76,17 +70,13 @@ FROM base AS dependencies
 WORKDIR /usr/app
 
 # Add Python and build tools to compile native modules
-RUN apt-get update \
-    && apt-get install --no-install-recommends -y \
-  python-is-python3 \
-  build-essential \
-  libssl-dev \
-  zlib1g-dev \
-  pkg-config \
-  libopus-dev \
-    && apt-get autoclean \
-    && apt-get autoremove \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache \
+  python3 \
+  build-base \
+  openssl-dev \
+  zlib-dev \
+  pkgconfig \
+  opus-dev
 
 COPY package.json .
 COPY yarn.lock .
@@ -100,10 +90,10 @@ ENV YARN_ENABLE_INLINE_BUILDS=1
 
 RUN --mount=type=cache,target=/usr/local/share/.cache/yarn \
   yarn install --immutable
-RUN cp -R node_modules /usr/app/prod_node_modules
 
-RUN --mount=type=cache,target=/usr/local/share/.cache/yarn \
-  yarn install --immutable
+# Copy only prod deps for runner stage
+RUN mkdir -p /usr/app/prod_node_modules && \
+  cp -R node_modules/* /usr/app/prod_node_modules/
 
 FROM dependencies AS builder
 
