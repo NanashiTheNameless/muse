@@ -16,9 +16,26 @@ interface YtDlpMediaDownload {
 }
 
 interface YtDlpResponse extends YtDlpMediaDownload {
+  readonly id?: string;
+  readonly title?: string;
+  readonly uploader?: string;
+  readonly channel?: string;
+  readonly duration?: number;
+  readonly description?: string;
+  readonly thumbnail?: string;
   readonly is_live?: boolean;
   readonly live_status?: string;
   readonly requested_downloads?: readonly YtDlpMediaDownload[];
+}
+
+export interface YtDlpVideoMetadata {
+  readonly id: string;
+  readonly title: string;
+  readonly artist: string;
+  readonly length: number;
+  readonly description: string;
+  readonly thumbnailUrl: string | null;
+  readonly isLive: boolean;
 }
 
 export interface YtDlpMediaSource {
@@ -284,6 +301,48 @@ export const getYouTubeMediaSource = async (videoIdOrUrl: string): Promise<YtDlp
 
     if (error instanceof SyntaxError) {
       throw new Error('yt-dlp returned an invalid response.');
+    }
+
+    throw error;
+  }
+};
+
+export const getYouTubeVideoMetadata = async (videoIdOrUrl: string): Promise<YtDlpVideoMetadata> => {
+  try {
+    const {stdout} = await execa(getExecutable(), [
+      '--dump-single-json',
+      '--no-playlist',
+      '--skip-download',
+      '--no-warnings',
+      '--no-cache-dir',
+      toYouTubeWatchUrl(videoIdOrUrl),
+    ], {
+      timeout: YT_DLP_EXTRACT_TIMEOUT_MS,
+    });
+
+    const response = JSON.parse(stdout) as YtDlpResponse;
+
+    if (!response.id) {
+      throw new Error('yt-dlp did not return a video ID.');
+    }
+
+    return {
+      id: response.id,
+      title: response.title ?? response.id,
+      artist: response.uploader ?? response.channel ?? 'YouTube',
+      length: response.duration ?? 0,
+      description: response.description ?? '',
+      thumbnailUrl: response.thumbnail ?? null,
+      isLive: Boolean(response.is_live ?? (response.live_status === 'is_live')),
+    };
+  } catch (error: unknown) {
+    if (isExecaError(error)) {
+      const detail = error.stderr?.trim() ?? error.shortMessage ?? 'Unknown yt-dlp error';
+      throw new Error(`yt-dlp failed to read video metadata: ${detail}`);
+    }
+
+    if (error instanceof SyntaxError) {
+      throw new Error('yt-dlp returned an invalid metadata response.');
     }
 
     throw error;

@@ -1,15 +1,9 @@
-<p align="center">
-  <img width="250" height="250" src="https://raw.githubusercontent.com/museofficial/muse/master/.github/logo.png">
-</p>
-
 > [!IMPORTANT]
-> Muse is now community-maintained under the [`museofficial`](https://github.com/museofficial) organization. For Docker, use `ghcr.io/museofficial/muse` as the canonical image source. Docker Hub tags may be published as compatibility mirrors, but GHCR is the supported target for new deployments.
+> This is an independent fork of Muse. It is not affiliated with, endorsed by, or maintained by the upstream Muse project or the `museofficial` organization.
 
 ------
 
 Muse is a **highly-opinionated midwestern self-hosted** Discord music bot **that doesn't suck**. It's made for small to medium-sized Discord servers/guilds (think about a group the size of you, your friends, and your friend's friends).
-
-![Hero graphic](.github/hero.png)
 
 ## Features
 
@@ -17,7 +11,6 @@ Muse is a **highly-opinionated midwestern self-hosted** Discord music bot **that
 - ⏩ Seeking within a song/video
 - 💾 Local caching for better performance
 - 📋 No vote-to-skip - this is anarchy, not a democracy
-- ↔️ Autoconverts playlists / artists / albums / songs from Spotify
 - ⭐ Users can save favorite queries for reuse
 - 1️⃣ Muse instance supports multiple guilds
 - 🔊 Configurable volume controls, including optional ducking when people speak
@@ -26,10 +19,9 @@ Muse is a **highly-opinionated midwestern self-hosted** Discord music bot **that
 
 ## Running
 
-Muse is written in TypeScript. You can either run Muse with Docker (recommended) or directly with Node.js. Both methods require the Discord and YouTube API keys below. Spotify keys are optional and enable Spotify URL conversion:
+Muse is written in TypeScript. You can either run Muse with Docker (recommended) or directly with Node.js. Both methods require the Discord and YouTube API keys below:
 
 - `DISCORD_TOKEN` can be acquired [here](https://discordapp.com/developers/applications) by creating a 'New Application', then going to 'Bot'.
-- `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` can be acquired [here](https://developer.spotify.com/dashboard/applications) with 'Create a Client ID'.
 - `YOUTUBE_API_KEY` can be acquired by [creating a new project](https://console.developers.google.com) in Google's Developer Console, enabling the YouTube API, and creating an API key under credentials.
 
 Muse will log a URL when run. Open this URL in a browser to invite Muse to your server. Muse will DM the server owner after it's added with setup instructions.
@@ -55,7 +47,7 @@ There are a variety of image tags available:
 (Replace empty config strings with correct values.)
 
 ```bash
-docker run -it -v "$(pwd)/data":/data -e DISCORD_TOKEN='' -e SPOTIFY_CLIENT_ID='' -e SPOTIFY_CLIENT_SECRET='' -e YOUTUBE_API_KEY='' ghcr.io/museofficial/muse:latest
+docker run -it -v "$(pwd)/data":/data -e DISCORD_TOKEN='' -e YOUTUBE_API_KEY='' ghcr.io/museofficial/muse:latest
 ```
 
 This starts Muse and creates a data directory in your current directory.
@@ -74,8 +66,6 @@ services:
     environment:
       - DISCORD_TOKEN=
       - YOUTUBE_API_KEY=
-      - SPOTIFY_CLIENT_ID=
-      - SPOTIFY_CLIENT_SECRET=
 ```
 
 If you keep the same `DISCORD_TOKEN`, reuse the same `/data` volume, and point your Compose service at a newer image tag, Muse will come back up with the same bot identity and persisted database/cache.

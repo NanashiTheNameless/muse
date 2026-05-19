@@ -1,12 +1,10 @@
 import {AutocompleteInteraction, ChatInputCommandInteraction} from 'discord.js';
 import {URL} from 'url';
 import {SlashCommandBuilder, SlashCommandSubcommandsOnlyBuilder} from '@discordjs/builders';
-import {inject, injectable, optional} from 'inversify';
-import Spotify from 'spotify-web-api-node';
+import {inject, injectable} from 'inversify';
 import Command from './index.js';
 import {TYPES} from '../types.js';
-import ThirdParty from '../services/third-party.js';
-import getYouTubeAndSpotifySuggestionsFor from '../utils/get-youtube-and-spotify-suggestions-for.js';
+import getYouTubeCommandSuggestionsFor from '../utils/get-youtube-command-suggestions-for.js';
 import KeyValueCacheProvider from '../services/key-value-cache.js';
 import {ONE_HOUR_IN_SECONDS} from '../utils/constants.js';
 import AddQueryToQueue from '../services/add-query-to-queue.js';
@@ -17,25 +15,19 @@ export default class implements Command {
 
   public requiresVC = true;
 
-  private readonly spotify?: Spotify;
   private readonly cache: KeyValueCacheProvider;
   private readonly addQueryToQueue: AddQueryToQueue;
 
-  constructor(@inject(TYPES.ThirdParty) @optional() thirdParty: ThirdParty, @inject(TYPES.KeyValueCache) cache: KeyValueCacheProvider, @inject(TYPES.Services.AddQueryToQueue) addQueryToQueue: AddQueryToQueue) {
-    this.spotify = thirdParty?.spotify;
+  constructor(@inject(TYPES.KeyValueCache) cache: KeyValueCacheProvider, @inject(TYPES.Services.AddQueryToQueue) addQueryToQueue: AddQueryToQueue) {
     this.cache = cache;
     this.addQueryToQueue = addQueryToQueue;
-
-    const queryDescription = thirdParty === undefined
-      ? 'YouTube URL or search query'
-      : 'YouTube URL, Spotify URL, or search query';
 
     this.slashCommand = new SlashCommandBuilder()
       .setName('play')
       .setDescription('play a song')
       .addStringOption(option => option
         .setName('query')
-        .setDescription(queryDescription)
+        .setDescription('YouTube URL or search query')
         .setAutocomplete(true)
         .setRequired(true))
       .addBooleanOption(option => option
@@ -82,9 +74,8 @@ export default class implements Command {
     } catch {}
 
     const suggestions = await this.cache.wrap(
-      getYouTubeAndSpotifySuggestionsFor,
+      getYouTubeCommandSuggestionsFor,
       query,
-      this.spotify,
       10,
       {
         expiresIn: ONE_HOUR_IN_SECONDS,

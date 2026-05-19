@@ -16,8 +16,6 @@ const firstNonEmpty = (...values: Array<string | undefined>) => values
 const CONFIG_MAP = {
   DISCORD_TOKEN: process.env.DISCORD_TOKEN,
   YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY,
-  SPOTIFY_CLIENT_ID: process.env.SPOTIFY_CLIENT_ID ?? '',
-  SPOTIFY_CLIENT_SECRET: process.env.SPOTIFY_CLIENT_SECRET ?? '',
   REGISTER_COMMANDS_ON_BOT: process.env.REGISTER_COMMANDS_ON_BOT === 'true',
   DATA_DIR,
   CACHE_DIR: path.join(DATA_DIR, 'cache'),
@@ -43,8 +41,6 @@ const BOT_ACTIVITY_TYPE_MAP = {
 export default class Config {
   readonly DISCORD_TOKEN!: string;
   readonly YOUTUBE_API_KEY!: string;
-  readonly SPOTIFY_CLIENT_ID!: string;
-  readonly SPOTIFY_CLIENT_SECRET!: string;
   readonly REGISTER_COMMANDS_ON_BOT!: boolean;
   readonly DATA_DIR!: string;
   readonly CACHE_DIR!: string;

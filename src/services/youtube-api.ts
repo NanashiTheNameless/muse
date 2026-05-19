@@ -8,6 +8,7 @@ import KeyValueCacheProvider from './key-value-cache.js';
 import {ONE_HOUR_IN_SECONDS, ONE_MINUTE_IN_SECONDS} from '../utils/constants.js';
 import {parseTime} from '../utils/time.js';
 import getYouTubeID from 'get-youtube-id';
+import {getYouTubeVideoMetadata, YtDlpVideoMetadata} from '../utils/yt-dlp.js';
 
 interface VideoDetailsResponse {
   id: string;
@@ -132,6 +133,12 @@ export default class {
     return this.getMetadataFromVideo({video, shouldSplitChapters});
   }
 
+  async getVideoDirect(url: string, shouldSplitChapters: boolean): Promise<SongMetadata[]> {
+    const video = await getYouTubeVideoMetadata(url);
+
+    return this.getMetadataFromYtDlpVideo({video, shouldSplitChapters});
+  }
+
   async getPlaylist(listId: string, shouldSplitChapters: boolean): Promise<SongMetadata[]> {
     const playlistParams = {
       searchParams: {
@@ -237,6 +244,49 @@ export default class {
     }
 
     const chapters = this.parseChaptersFromDescription(video.snippet.description, base.length);
+
+    if (!chapters) {
+      return [base];
+    }
+
+    const tracks: SongMetadata[] = [];
+
+    for (const [label, {offset, length}] of chapters) {
+      tracks.push({
+        ...base,
+        offset,
+        length,
+        title: `${label} (${base.title})`,
+      });
+    }
+
+    return tracks;
+  }
+
+  private getMetadataFromYtDlpVideo({
+    video,
+    shouldSplitChapters,
+  }: {
+    video: YtDlpVideoMetadata;
+    shouldSplitChapters?: boolean;
+  }): SongMetadata[] {
+    const base: SongMetadata = {
+      source: MediaSource.Youtube,
+      title: video.title,
+      artist: video.artist,
+      length: video.length,
+      offset: 0,
+      url: video.id,
+      playlist: null,
+      isLive: video.isLive,
+      thumbnailUrl: video.thumbnailUrl,
+    };
+
+    if (!shouldSplitChapters) {
+      return [base];
+    }
+
+    const chapters = this.parseChaptersFromDescription(video.description, base.length);
 
     if (!chapters) {
       return [base];
