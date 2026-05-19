@@ -14,6 +14,9 @@ interface VideoDetailsResponse {
   contentDetails: {
     videoId: string;
     duration: string;
+    contentRating?: {
+      ytRating?: string;
+    };
   };
   snippet: {
     title: string;
@@ -75,6 +78,15 @@ export default class {
       searchParams: {
         key: this.youtubeKey,
         responseType: 'json',
+      },
+      hooks: {
+        beforeError: [
+          error => {
+            // Strip URLs from error messages to prevent API key leakage
+            error.message = error.message.replace(/https?:\/\/\S+/g, '[URL redacted]');
+            return error;
+          },
+        ],
       },
     });
   }
@@ -220,6 +232,10 @@ export default class {
     queuedPlaylist?: QueuedPlaylist;
     shouldSplitChapters?: boolean;
   }): SongMetadata[] {
+    if (video.contentDetails.contentRating?.ytRating === 'ytAgeRestricted') {
+      throw new Error(`"${video.snippet.title}" is age-restricted and cannot be played correctly due to issues with YouTube's API. It has not been added.`);
+    }
+
     const base: SongMetadata = {
       source: MediaSource.Youtube,
       title: video.snippet.title,
