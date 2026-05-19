@@ -1,0 +1,12 @@
+services:
+  muse:
+    build:
+      context: .
+    image: muse:local
+    restart: unless-stopped
+    volumes:
+      - ./data:/data
+    env_file:
+      - .env
+    environment:
+      DATA_DIR: /data
