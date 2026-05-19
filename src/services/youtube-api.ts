@@ -8,7 +8,7 @@ import KeyValueCacheProvider from './key-value-cache.js';
 import {ONE_HOUR_IN_SECONDS, ONE_MINUTE_IN_SECONDS} from '../utils/constants.js';
 import {parseTime} from '../utils/time.js';
 import getYouTubeID from 'get-youtube-id';
-import {getYouTubeVideoMetadata, YtDlpVideoMetadata} from '../utils/yt-dlp.js';
+import {getYouTubeVideoMetadata, searchYouTubeVideoMetadata, YtDlpVideoMetadata} from '../utils/yt-dlp.js';
 
 interface VideoDetailsResponse {
   id: string;
@@ -51,16 +51,6 @@ interface PlaylistItem {
   };
 }
 
-interface SearchResponse {
-  items: SearchItem[];
-}
-
-interface SearchItem {
-  id: {
-    videoId: string;
-  };
-}
-
 @injectable()
 export default class {
   private readonly youtubeKey: string;
@@ -81,39 +71,9 @@ export default class {
   }
 
   async search(query: string, shouldSplitChapters: boolean): Promise<SongMetadata[]> {
-    const params = {
-      searchParams: {
-        part: 'snippet',
-        q: query,
-        type: 'video',
-        maxResults: '10',
-      },
-    };
+    const video = await searchYouTubeVideoMetadata(query);
 
-    const {items} = await this.cache.wrap(
-      async () => this.got('search', params).json() as Promise<SearchResponse>,
-      params,
-      {
-        expiresIn: ONE_HOUR_IN_SECONDS,
-      },
-    );
-
-    const ids = items
-      .map(item => item.id.videoId)
-      .filter(Boolean);
-
-    if (ids.length === 0) {
-      return [];
-    }
-
-    const videos = await this.getVideosByID(ids);
-    const firstVideo = ids
-      .map(id => videos.find(video => video.id === id))
-      .find(Boolean);
-
-    return firstVideo
-      ? this.getMetadataFromVideo({video: firstVideo, shouldSplitChapters})
-      : [];
+    return this.getMetadataFromYtDlpVideo({video, shouldSplitChapters});
   }
 
   async getVideo(url: string, shouldSplitChapters: boolean): Promise<SongMetadata[]> {

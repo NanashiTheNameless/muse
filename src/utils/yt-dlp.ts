@@ -307,7 +307,7 @@ export const getYouTubeMediaSource = async (videoIdOrUrl: string): Promise<YtDlp
   }
 };
 
-export const getYouTubeVideoMetadata = async (videoIdOrUrl: string): Promise<YtDlpVideoMetadata> => {
+const getYtDlpVideoMetadata = async (target: string): Promise<YtDlpVideoMetadata> => {
   try {
     const {stdout} = await execa(getExecutable(), [
       '--dump-single-json',
@@ -315,7 +315,7 @@ export const getYouTubeVideoMetadata = async (videoIdOrUrl: string): Promise<YtD
       '--skip-download',
       '--no-warnings',
       '--no-cache-dir',
-      toYouTubeWatchUrl(videoIdOrUrl),
+      target,
     ], {
       timeout: YT_DLP_EXTRACT_TIMEOUT_MS,
     });
@@ -348,3 +348,9 @@ export const getYouTubeVideoMetadata = async (videoIdOrUrl: string): Promise<YtD
     throw error;
   }
 };
+
+export const getYouTubeVideoMetadata = async (videoIdOrUrl: string): Promise<YtDlpVideoMetadata> =>
+  getYtDlpVideoMetadata(toYouTubeWatchUrl(videoIdOrUrl));
+
+export const searchYouTubeVideoMetadata = async (query: string): Promise<YtDlpVideoMetadata> =>
+  getYtDlpVideoMetadata(`ytsearch1:${query}`);
