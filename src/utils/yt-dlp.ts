@@ -143,6 +143,7 @@ const getYtDlpExtractArgs = (attempt: YtDlpExtractAttempt, videoIdOrUrl: string)
   '--no-cache-dir',
   '--extractor-retries', '3',
   '--retry-sleep', 'extractor:exp=2:16',
+  '--retry-sleep', 'http:exp=1:16',
   ...getYtDlpCookieArgs(),
   ...(attempt.format ? ['-f', attempt.format] : []),
   ...(attempt.sort ? ['-S', attempt.sort] : []),
