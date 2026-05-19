@@ -11,7 +11,7 @@ import AddQueryToQueue from '../services/add-query-to-queue.js';
 
 @injectable()
 export default class implements Command {
-  public readonly slashCommand: Partial<SlashCommandBuilder | SlashCommandSubcommandsOnlyBuilder> & Pick<SlashCommandBuilder, 'toJSON'>;
+  public readonly slashCommand: any;
 
   public requiresVC = true;
 

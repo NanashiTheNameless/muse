@@ -78,8 +78,11 @@ WORKDIR /usr/app
 # Add Python and build tools to compile native modules
 RUN apt-get update \
     && apt-get install --no-install-recommends -y \
-    python-is-python3 \
-    build-essential \
+  python-is-python3 \
+  build-essential \
+  libssl-dev \
+  zlib1g-dev \
+  pkg-config \
     && apt-get autoclean \
     && apt-get autoremove \
     && rm -rf /var/lib/apt/lists/*
