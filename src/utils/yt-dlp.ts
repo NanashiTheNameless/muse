@@ -48,27 +48,40 @@ interface YtDlpExtractAttempt {
   readonly extractorArgs?: string;
 }
 
-const YT_DLP_YOUTUBE_FALLBACK_ARGS = 'youtube:player_client=tv,ios,mweb;formats=missing_pot';
+// Broader client list without POT — tried after the default web client.
+const YT_DLP_YOUTUBE_EXTENDED_CLIENTS = 'youtube:player_client=tv,ios,mweb';
+// Last-resort args: include formats that are missing POT so yt-dlp can at least find something.
+const YT_DLP_YOUTUBE_FALLBACK_ARGS = `${YT_DLP_YOUTUBE_EXTENDED_CLIENTS};formats=missing_pot`;
 
 const YT_DLP_EXTRACT_ATTEMPTS: YtDlpExtractAttempt[] = [
+  // Default web client first: cookies (e.g. for age-restricted content) are only effective here.
+  // ios/android clients return only storyboard formats for age-restricted videos, so they must
+  // come after this attempt.
   {
-    label: 'bestaudio with sort (fallback clients)',
+    label: 'bestaudio (default client)',
     format: 'bestaudio*/bestaudio/b/best',
     sort: 'proto:https',
-    extractorArgs: YT_DLP_YOUTUBE_FALLBACK_ARGS,
   },
   {
-    label: 'bestaudio (fallback clients)',
+    label: 'best (default client)',
+    format: 'best',
+  },
+  // Clients that avoid Proof-of-Origin Token (POT) requirements for non-restricted content.
+  {
+    label: 'bestaudio with extended clients',
+    format: 'bestaudio*/bestaudio/b/best',
+    sort: 'proto:https',
+    extractorArgs: YT_DLP_YOUTUBE_EXTENDED_CLIENTS,
+  },
+  // Fallback: allow missing-POT formats in case the above clients return nothing.
+  {
+    label: 'bestaudio with all clients (missing POT)',
     format: 'bestaudio*/bestaudio/b/best',
     extractorArgs: YT_DLP_YOUTUBE_FALLBACK_ARGS,
   },
   {
     label: 'best (fallback clients)',
     format: 'best',
-    extractorArgs: YT_DLP_YOUTUBE_FALLBACK_ARGS,
-  },
-  {
-    label: 'automatic selection (fallback clients)',
     extractorArgs: YT_DLP_YOUTUBE_FALLBACK_ARGS,
   },
   {

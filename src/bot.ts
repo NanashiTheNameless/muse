@@ -1,4 +1,4 @@
-import {Client, Collection, User} from 'discord.js';
+import {Client, Collection, MessageFlags, User} from 'discord.js';
 import {inject, injectable} from 'inversify';
 import {TYPES} from './types.js';
 import container from './inversify.config.js';
@@ -70,7 +70,7 @@ export default class {
 
           const requiresVC = command.requiresVC instanceof Function ? command.requiresVC(interaction) : command.requiresVC;
           if (requiresVC && interaction.member && !isUserInVoice(interaction.guild, interaction.member.user as User)) {
-            await interaction.reply({content: errorMsg('You need to be in a voice channel.'), ephemeral: true});
+            await interaction.reply({content: errorMsg('You need to be in a voice channel.'), flags: MessageFlags.Ephemeral});
             return;
           }
 
@@ -106,7 +106,7 @@ export default class {
           if ((interaction.isCommand() || interaction.isButton()) && (interaction.replied || interaction.deferred)) {
             await interaction.editReply(errorMsg(error as Error));
           } else if (interaction.isCommand() || interaction.isButton()) {
-            await interaction.reply({content: errorMsg(error as Error), ephemeral: true});
+            await interaction.reply({content: errorMsg(error as Error), flags: MessageFlags.Ephemeral});
           }
         } catch {}
       }

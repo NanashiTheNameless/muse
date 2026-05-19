@@ -1,4 +1,4 @@
-import {ChatInputCommandInteraction, GuildMember} from 'discord.js';
+import {ChatInputCommandInteraction, GuildMember, MessageFlags} from 'discord.js';
 import {inject, injectable} from 'inversify';
 import shuffle from 'array-shuffle';
 import {TYPES} from '../types.js';
@@ -57,7 +57,7 @@ export default class AddQueryToQueue {
 
     const {playlistLimit, queueAddResponseEphemeral} = settings;
 
-    await interaction.deferReply({ephemeral: queueAddResponseEphemeral});
+    await interaction.deferReply({flags: queueAddResponseEphemeral ? MessageFlags.Ephemeral : undefined});
     await interaction.editReply('Looking that up...');
     debug(`Queue lookup started: guild=${guildId} query=${query}`);
 
