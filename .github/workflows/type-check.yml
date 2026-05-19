@@ -12,8 +12,10 @@ jobs:
         with:
           node-version: '24'
           cache: 'yarn'
-      - name: Enable Corepack
-        run: corepack enable
+      - name: Enable Corepack and set Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.14.1 --activate
       - name: Install dependencies
         run: yarn install --immutable
       - name: Generate Prisma client
