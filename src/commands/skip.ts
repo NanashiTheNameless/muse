@@ -53,9 +53,10 @@ export default class implements Command {
     const isAloneInVC = nonBotMembers !== null && nonBotMembers.size === 1 && nonBotMembers.has(userId);
 
     if (isInstanceOwner || hasManageGuild || isRequester || isAloneInVC) {
+      await interaction.deferReply();
       try {
         await player.forward(numToSkip);
-        await interaction.reply({
+        await interaction.editReply({
           content: 'Skipped.',
           embeds: player.getCurrent() ? [buildPlayingMessageEmbed(player)] : [],
         });
@@ -94,9 +95,10 @@ export default class implements Command {
     const votes = player.getSkipVotes().size;
 
     if (votes > othersCount / 2) {
+      await interaction.deferReply();
       try {
         await player.forward(1);
-        await interaction.reply({
+        await interaction.editReply({
           content: `Vote skip passed (${votes}/${othersCount}). Skipped.`,
           embeds: player.getCurrent() ? [buildPlayingMessageEmbed(player)] : [],
         });

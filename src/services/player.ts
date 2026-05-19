@@ -28,6 +28,7 @@ import {Setting} from '@prisma/client';
 export enum MediaSource {
   Youtube,
   HLS,
+  Arbitrary,
 }
 
 export interface QueuedPlaylist {
@@ -543,6 +544,23 @@ export default class {
 
     if (song.source === MediaSource.HLS) {
       return this.createReadStream({url: song.url, cacheKey: song.url});
+    }
+
+    if (song.source === MediaSource.Arbitrary) {
+      const ffmpegInputOptions: string[] = [
+        '-reconnect', '1',
+        '-reconnect_streamed', '1',
+        '-reconnect_delay_max', '5',
+      ];
+      if (options.seek) {
+        ffmpegInputOptions.push('-ss', options.seek.toString());
+      }
+
+      if (options.to) {
+        ffmpegInputOptions.push('-to', options.to.toString());
+      }
+
+      return this.createReadStream({url: song.url, cacheKey: song.url, ffmpegInputOptions});
     }
 
     let ffmpegInput: string | null;

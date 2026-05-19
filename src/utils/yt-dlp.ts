@@ -46,6 +46,7 @@ interface YtDlpExtractAttempt {
   readonly format?: string;
   readonly sort?: string;
   readonly extractorArgs?: string;
+  readonly skipJsRuntime?: boolean;
 }
 
 // Broader client list without POT — tried after the default web client.
@@ -57,14 +58,18 @@ const YT_DLP_EXTRACT_ATTEMPTS: YtDlpExtractAttempt[] = [
   // Default web client first: cookies (e.g. for age-restricted content) are only effective here.
   // ios/android clients return only storyboard formats for age-restricted videos, so they must
   // come after this attempt.
+  // skipJsRuntime: using --js-runtimes with the default client breaks cookie auth for
+  // age-restricted videos (triggers "Sign in to confirm your age" even with valid cookies).
   {
     label: 'bestaudio (default client)',
     format: 'bestaudio*/bestaudio/b/best',
     sort: 'proto:https',
+    skipJsRuntime: true,
   },
   {
     label: 'best (default client)',
     format: 'best',
+    skipJsRuntime: true,
   },
   // Clients that avoid Proof-of-Origin Token (POT) requirements for non-restricted content.
   {
@@ -135,8 +140,7 @@ const getYtDlpCookieArgs = () => {
 const getYtDlpExtractArgs = (attempt: YtDlpExtractAttempt, videoIdOrUrl: string) => [
   '--dump-single-json',
   '--ignore-config',
-  '--js-runtimes',
-  'deno:/usr/local/bin/deno',
+  ...(attempt.skipJsRuntime ? [] : ['--js-runtimes', 'deno:/usr/local/bin/deno']),
   '--no-playlist',
   '--skip-download',
   '--no-warnings',

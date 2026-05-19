@@ -61,7 +61,7 @@ export default class {
         throw new Error('That does not exist.');
       }
     } else {
-      const song = await this.httpLiveStream(query);
+      const song = await this.arbitraryUrl(query);
 
       if (song) {
         newSongs.push(song);
@@ -85,20 +85,55 @@ export default class {
     return this.youtubeAPI.getPlaylist(listId, shouldSplitChapters);
   }
 
-  private async httpLiveStream(url: string): Promise<SongMetadata> {
-    return new Promise((resolve, reject) => {
-      ffmpeg(url).ffprobe((err, _) => {
-        if (err) {
-          reject();
+  private async arbitraryUrl(url: string): Promise<SongMetadata> {
+    const titleFromUrl = () => {
+      try {
+        const filename = new URL(url).pathname.split('/').pop();
+        return filename ? decodeURIComponent(filename).replace(/\.[^.]+$/, '') : url;
+      } catch {
+        return url;
+      }
+    };
+
+    const hostnameFromUrl = () => {
+      try {
+        return new URL(url).hostname;
+      } catch {
+        return url;
+      }
+    };
+
+    return new Promise(resolve => {
+      ffmpeg(url).ffprobe((err, data) => {
+        if (err || !data) {
+          // ffprobe failed — play the URL anyway with unknown metadata
+          resolve({
+            url,
+            source: MediaSource.Arbitrary,
+            isLive: false,
+            title: titleFromUrl(),
+            artist: hostnameFromUrl(),
+            length: 0,
+            offset: 0,
+            playlist: null,
+            thumbnailUrl: null,
+          });
+          return;
         }
+
+        const duration = typeof data.format?.duration === 'number' ? Math.ceil(data.format.duration) : 0;
+        const isLive = duration === 0;
+        const tags = (data.format?.tags ?? {}) as Record<string, string>;
+        const title = tags.title || titleFromUrl();
+        const artist = tags.artist ?? tags.album_artist ?? new URL(url).hostname;
 
         resolve({
           url,
-          source: MediaSource.HLS,
-          isLive: true,
-          title: url,
-          artist: url,
-          length: 0,
+          source: isLive ? MediaSource.HLS : MediaSource.Arbitrary,
+          isLive,
+          title,
+          artist,
+          length: duration,
           offset: 0,
           playlist: null,
           thumbnailUrl: null,

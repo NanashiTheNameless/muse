@@ -16,6 +16,12 @@ const getSongTitle = ({title, url, offset, source}: QueuedSong, shouldTruncate =
     return `[${title}](${url})`;
   }
 
+  if (source === MediaSource.Arbitrary) {
+    const cleanSongTitle = title.replace(/\[.*\]/, '').trim();
+    const songTitle = shouldTruncate ? truncate(cleanSongTitle, getMaxSongTitleLength(cleanSongTitle)) : cleanSongTitle;
+    return `[${songTitle}](${url})`;
+  }
+
   const cleanSongTitle = title.replace(/\[.*\]/, '').trim();
 
   const songTitle = shouldTruncate ? truncate(cleanSongTitle, getMaxSongTitleLength(cleanSongTitle)) : cleanSongTitle;
