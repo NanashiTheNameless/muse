@@ -48,32 +48,31 @@ interface YtDlpExtractAttempt {
   readonly extractorArgs?: string;
 }
 
+const YT_DLP_YOUTUBE_FALLBACK_ARGS = 'youtube:player_client=tv,ios,mweb;formats=missing_pot';
+
 const YT_DLP_EXTRACT_ATTEMPTS: YtDlpExtractAttempt[] = [
   {
-    label: 'preferred audio',
+    label: 'bestaudio with sort (fallback clients)',
     format: 'bestaudio*/bestaudio/b/best',
     sort: 'proto:https',
-    extractorArgs: 'youtube:player_client=android_vr,default,-ios',
+    extractorArgs: YT_DLP_YOUTUBE_FALLBACK_ARGS,
   },
   {
-    label: 'preferred audio without sort',
+    label: 'bestaudio (fallback clients)',
     format: 'bestaudio*/bestaudio/b/best',
-    extractorArgs: 'youtube:player_client=android_vr,default,-ios',
+    extractorArgs: YT_DLP_YOUTUBE_FALLBACK_ARGS,
   },
   {
-    label: 'default clients audio',
-    format: 'bestaudio*/bestaudio/b/best',
-  },
-  {
-    label: 'default clients best',
+    label: 'best (fallback clients)',
     format: 'best',
+    extractorArgs: YT_DLP_YOUTUBE_FALLBACK_ARGS,
   },
   {
-    label: 'default clients automatic selection',
+    label: 'automatic selection (fallback clients)',
+    extractorArgs: YT_DLP_YOUTUBE_FALLBACK_ARGS,
   },
   {
-    label: 'all clients automatic selection',
-    extractorArgs: 'youtube:player_client=all,-ios',
+    label: 'automatic selection',
   },
 ];
 
@@ -123,6 +122,8 @@ const getYtDlpCookieArgs = () => {
 const getYtDlpExtractArgs = (attempt: YtDlpExtractAttempt, videoIdOrUrl: string) => [
   '--dump-single-json',
   '--ignore-config',
+  '--js-runtimes',
+  'deno:/usr/local/bin/deno',
   '--no-playlist',
   '--skip-download',
   '--no-warnings',
@@ -244,12 +245,22 @@ const updateWithYtDlpSelfUpdate = async () => {
 
 const joinErrors = (errors: string[]) => errors.length > 0 ? errors.join('; ') : undefined;
 
+const PLAYABLE_PROTOCOLS = new Set([
+  'http',
+  'https',
+  'm3u8',
+  'm3u8_native',
+  'dash',
+  'http_dash_segments',
+]);
+
 const isPlayableProtocol = (protocol?: string) => {
   if (!protocol) {
     return true;
   }
 
-  return ['http', 'https', 'm3u8', 'm3u8_native', 'http_dash_segments'].includes(protocol);
+  // ffmpeg can consume direct HTTP(S), HLS, and DASH manifest inputs.
+  return PLAYABLE_PROTOCOLS.has(protocol);
 };
 
 const hasPlayableUrl = (download: YtDlpMediaDownload) => Boolean(download.url) && isPlayableProtocol(download.protocol);
@@ -259,9 +270,22 @@ const getAudioScore = (download: YtDlpMediaDownload) => download.abr ?? download
 const getSizeScore = (download: YtDlpMediaDownload) => download.filesize ?? download.filesize_approx ?? 0;
 
 const pickBestMediaDownload = (response: YtDlpResponse) => {
-  const requestedDownload = response.requested_downloads?.find(hasPlayableUrl);
-  if (requestedDownload) {
-    return requestedDownload;
+  const requestedDownloads = (response.requested_downloads ?? []).filter(hasPlayableUrl);
+
+  const rankDownloads = (downloads: YtDlpMediaDownload[]) => downloads
+    .slice()
+    .sort((left, right) => {
+      const audioScoreDifference = getAudioScore(right) - getAudioScore(left);
+      if (audioScoreDifference !== 0) {
+        return audioScoreDifference;
+      }
+
+      return getSizeScore(right) - getSizeScore(left);
+    });
+
+  if (requestedDownloads.length > 0) {
+    // Rank requested downloads same as formats
+    return rankDownloads(requestedDownloads).at(0);
   }
 
   if (hasPlayableUrl(response)) {
@@ -274,17 +298,7 @@ const pickBestMediaDownload = (response: YtDlpResponse) => {
     ? audioOnlyFormats
     : playableFormats.filter(format => format.acodec && format.acodec !== 'none');
 
-  return formatsToRank
-    .slice()
-    .sort((left, right) => {
-      const audioScoreDifference = getAudioScore(right) - getAudioScore(left);
-      if (audioScoreDifference !== 0) {
-        return audioScoreDifference;
-      }
-
-      return getSizeScore(right) - getSizeScore(left);
-    })
-    .at(0);
+  return rankDownloads(formatsToRank).at(0);
 };
 
 export const updateYtDlp = async (): Promise<YtDlpUpdateResult> => {
@@ -380,13 +394,6 @@ export const getYouTubeMediaSource = async (videoIdOrUrl: string): Promise<YtDlp
     }
   }
 
-  try {
-    throw new Error(errors.join(' | '));
-  } catch (error: unknown) {
-    if (error instanceof SyntaxError) {
-      throw new Error('yt-dlp returned an invalid response.');
-    }
-
-    throw new Error(`yt-dlp failed to extract media: ${getExecaErrorMessage(error)}`);
-  }
+  // All attempts failed — return a single composed error with the collected reasons.
+  throw new Error(`yt-dlp failed to extract media: ${errors.join(' | ')}`);
 };

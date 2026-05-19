@@ -114,7 +114,7 @@ export default class {
 
     console.log('Connecting to Discord...');
 
-    this.client.once('ready', async () => {
+    this.client.once('clientReady', async () => {
       debug(generateDependencyReport());
 
       // Update commands

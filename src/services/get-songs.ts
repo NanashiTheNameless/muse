@@ -4,7 +4,7 @@ import {TYPES} from '../types.js';
 import ffmpeg from 'fluent-ffmpeg';
 import YoutubeAPI from './youtube-api.js';
 import {URL} from 'node:url';
-import * as getYouTubeID from 'get-youtube-id';
+import getYouTubeID from '../utils/get-youtube-id.js';
 
 @injectable()
 export default class {
@@ -44,7 +44,7 @@ export default class {
     ];
 
     if (YOUTUBE_HOSTS.includes(url.host)) {
-      const videoId = (getYouTubeID as any)(url.href);
+      const videoId = getYouTubeID(url.href);
 
       if (videoId) {
         const songs = await this.youtubeVideo(url.href, shouldSplitChapters);

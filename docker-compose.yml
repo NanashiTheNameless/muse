@@ -11,3 +11,4 @@ services:
       DATA_DIR: /data
       DATABASE_URL: "file:/data/prisma.db"
       YT_DLP_COOKIES_PATH: "/cookies.txt"
+      YT_DLP_AUTO_UPDATE: "true"

@@ -67,6 +67,7 @@ If you keep the same `DISCORD_TOKEN` and reuse the same `/data` volume, bot iden
 ```bash
 git clone https://github.com/NanashiTheNameless/muse.git
 cd muse
+nvm use
 corepack enable
 cp .env.example .env
 # fill in DISCORD_TOKEN and YOUTUBE_API_KEY
@@ -74,6 +75,8 @@ cp .env.example .env
 yarn install
 yarn start
 ```
+
+This project requires Node.js 22.12.0 or newer.
 
 ## Environment Variables
 

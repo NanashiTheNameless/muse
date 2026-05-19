@@ -7,7 +7,7 @@ import Config from './config.js';
 import KeyValueCacheProvider from './key-value-cache.js';
 import {ONE_HOUR_IN_SECONDS, ONE_MINUTE_IN_SECONDS} from '../utils/constants.js';
 import {parseTime} from '../utils/time.js';
-import * as getYouTubeID from 'get-youtube-id';
+import getYouTubeID from '../utils/get-youtube-id.js';
 
 interface VideoDetailsResponse {
   id: string;
@@ -116,7 +116,7 @@ export default class {
   }
 
   async getVideo(url: string, shouldSplitChapters: boolean): Promise<SongMetadata[]> {
-    const videoId = url.length === 11 ? url : (getYouTubeID as any)(url);
+    const videoId = url.length === 11 ? url : getYouTubeID(url);
 
     if (!videoId) {
       throw new Error('Video could not be found.');
