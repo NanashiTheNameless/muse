@@ -5,9 +5,9 @@ export default (width: number, progress: number): string => {
 
   for (let i = 0; i < width; i++) {
     if (i === dotPosition) {
-      res += '🔘';
+      res += 'o';
     } else {
-      res += '▬';
+      res += '-';
     }
   }
 

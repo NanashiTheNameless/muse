@@ -3,9 +3,9 @@ export default (error?: string | Error): string => {
 
   if (error) {
     if (typeof error === 'string') {
-      str = `🚫 Error: ${error}`;
+      str = `Error: ${error}`;
     } else if (error instanceof Error) {
-      str = `🚫 Error: ${error.message}`;
+      str = `Error: ${error.message}`;
     }
   }
 

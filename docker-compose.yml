@@ -1,14 +1,12 @@
 services:
   muse:
-    build:
-      context: .
-    image: muse:local
+    image: ghcr.io/NanashiTheNameless/muse:latest
     restart: unless-stopped
     volumes:
       - ./data:/data
       # Uncomment when YT_DLP_COOKIES_PATH=/cookies.txt is set in .env.
       # yt-dlp may refresh cookies, so this must be writable.
-      # - ./cookies.txt:/cookies.txt
+      - ./cookies.txt:/cookies.txt
     env_file:
       - .env
     environment:

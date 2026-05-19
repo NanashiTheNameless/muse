@@ -51,18 +51,18 @@ interface YtDlpExtractAttempt {
 const YT_DLP_EXTRACT_ATTEMPTS: YtDlpExtractAttempt[] = [
   {
     label: 'preferred audio',
-    format: 'ba/bestaudio/b/best',
+    format: 'bestaudio*/bestaudio/b/best',
     sort: 'proto:https',
     extractorArgs: 'youtube:player_client=android_vr,default,-ios',
   },
   {
     label: 'preferred audio without sort',
-    format: 'ba/bestaudio/b/best',
+    format: 'bestaudio*/bestaudio/b/best',
     extractorArgs: 'youtube:player_client=android_vr,default,-ios',
   },
   {
     label: 'default clients audio',
-    format: 'ba/bestaudio/b/best',
+    format: 'bestaudio*/bestaudio/b/best',
   },
   {
     label: 'default clients best',
@@ -122,6 +122,7 @@ const getYtDlpCookieArgs = () => {
 
 const getYtDlpExtractArgs = (attempt: YtDlpExtractAttempt, videoIdOrUrl: string) => [
   '--dump-single-json',
+  '--ignore-config',
   '--no-playlist',
   '--skip-download',
   '--no-warnings',

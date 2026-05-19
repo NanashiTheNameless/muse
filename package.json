@@ -1,9 +1,12 @@
 {
   "name": "muse",
   "version": "2.11.4",
-  "description": "🎧 a self-hosted Discord music bot that doesn't suck ",
-  "repository": "git@github.com:museofficial/muse.git",
-  "author": "Max Isom <hi@maxisom.me>",
+  "description": "an unofficial fork of a self-hosted Discord music bot",
+  "repository": "git@github.com:NanashiTheNameless/muse.git",
+  "author": "NanashiTheNameless <Nanashi@NamelessNanashi.dev>",
+  "contributors": [
+    "Max Isom <hi@maxisom.me>"
+  ],
   "license": "MIT",
   "private": true,
   "types": "dts/types",

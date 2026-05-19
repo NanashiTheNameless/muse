@@ -2,12 +2,14 @@
 
 FROM node:22-bookworm-slim AS base
 
+ARG YT_DLP_CHANNEL=master
 ARG YT_DLP_VERSION=
+ARG DENO_VERSION=
 ENV MUSE_BUNDLED_YT_DLP_PATH=/opt/yt-dlp/bin/yt-dlp
 
 # openssl will be a required package if base is updated to 18.16+ due to node:*-slim base distro change
 # https://github.com/prisma/prisma/issues/19729#issuecomment-1591270599
-# Install ffmpeg and yt-dlp runtime dependencies
+# Install ffmpeg/ffprobe, yt-dlp, yt-dlp-ejs, and deno runtime dependencies
 RUN --mount=type=cache,target=/root/.cache/pip \
     apt-get update \
     && apt-get install --no-install-recommends -y \
@@ -15,15 +17,38 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     tini \
     openssl \
     ca-certificates \
+    curl \
+    unzip \
     python3 \
     python3-venv \
     && python3 -m venv /opt/yt-dlp \
-    && if [ -n "${YT_DLP_VERSION}" ]; then \
+    && if [ "${YT_DLP_CHANNEL}" = "master" ]; then \
+        if [ -n "${YT_DLP_VERSION}" ]; then \
+          yt_dlp_url="https://github.com/yt-dlp/yt-dlp-master-builds/releases/download/${YT_DLP_VERSION}/yt-dlp"; \
+        else \
+          yt_dlp_url="https://github.com/yt-dlp/yt-dlp-master-builds/releases/latest/download/yt-dlp"; \
+        fi; \
+        curl -fsSL "${yt_dlp_url}" -o /opt/yt-dlp/bin/yt-dlp; \
+        chmod +x /opt/yt-dlp/bin/yt-dlp; \
+      elif [ -n "${YT_DLP_VERSION}" ]; then \
         /opt/yt-dlp/bin/pip install "yt-dlp==${YT_DLP_VERSION}"; \
     else \
         /opt/yt-dlp/bin/pip install yt-dlp; \
     fi \
     && ln -s /opt/yt-dlp/bin/yt-dlp /usr/local/bin/yt-dlp \
+    && npm install -g --omit=dev yt-dlp-ejs \
+    && export DENO_INSTALL=/opt/deno \
+    && if [ -n "${DENO_VERSION}" ]; then \
+        deno_version="${DENO_VERSION#v}"; \
+        curl -fsSL https://deno.land/install.sh | sh -s "v${deno_version}"; \
+      else \
+        curl -fsSL https://deno.land/install.sh | sh; \
+      fi \
+    && ln -s /opt/deno/bin/deno /usr/local/bin/deno \
+    && command -v ffmpeg \
+    && command -v ffprobe \
+    && command -v yt-dlp \
+    && command -v deno \
     && apt-get autoclean \
     && apt-get autoremove \
     && rm -rf /var/lib/apt/lists/*
