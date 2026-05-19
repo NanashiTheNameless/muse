@@ -46,6 +46,47 @@ const hasDatabaseBeenMigratedToPrisma = async () => {
   return true;
 };
 
+const getFailedPrismaMigrations = async () => {
+  const client = new Prisma.PrismaClient({
+    adapter: new PrismaBetterSqlite3({url: process.env.DATABASE_URL}),
+  });
+
+  try {
+    const failedMigrations = await client.$queryRaw<Array<{migration_name: string}>>`
+      SELECT migration_name
+      FROM _prisma_migrations
+      WHERE finished_at IS NULL
+        AND rolled_back_at IS NULL
+      ORDER BY started_at ASC
+    `;
+
+    await client.$disconnect();
+    return failedMigrations.map((migration) => migration.migration_name);
+  } catch (error: unknown) {
+    if (error instanceof Prisma.Prisma.PrismaClientKnownRequestError && error.code === 'P2010') {
+      await client.$disconnect();
+      return [];
+    }
+
+    await client.$disconnect();
+    throw error;
+  }
+};
+
+const resolveFailedMigrations = async () => {
+  const failedMigrations = await getFailedPrismaMigrations();
+
+  if (failedMigrations.length === 0) {
+    return;
+  }
+
+  console.warn(`Found ${failedMigrations.length} failed Prisma migration(s). Marking as rolled back before deploy.`);
+
+  for (const migration of failedMigrations) {
+    await execa('prisma', ['migrate', 'resolve', '--rolled-back', migration], {preferLocal: true});
+  }
+};
+
 (async () => {
   console.log('Applying database migrations...');
 
@@ -62,6 +103,18 @@ const hasDatabaseBeenMigratedToPrisma = async () => {
           throw error;
         }
       }
+    }
+  }
+
+  try {
+    await resolveFailedMigrations();
+  } catch (error) {
+    if ((error as ExecaError).stderr) {
+      console.error('Failed to resolve previously failed migrations:');
+      console.error((error as ExecaError).stderr);
+      process.exit(1);
+    } else {
+      throw error;
     }
   }
 
