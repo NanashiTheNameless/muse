@@ -34,6 +34,32 @@ For local Node.js runs (non-Docker):
 - ffmpeg 4.1+
 - yt-dlp on PATH (or set `YT_DLP_PATH`)
 
+## Adding the Bot to a Server
+
+The bot requires the following OAuth2 scopes and permissions:
+
+**Scopes:** `bot`, `applications.commands`
+
+**Permissions:**
+
+| Permission | Reason |
+|---|---|
+| View Channels | Receive slash command interactions |
+| Send Messages | Respond to commands |
+| Send Messages in Threads | Respond to commands in threads |
+| Embed Links | Now-playing and queue embeds |
+| Connect | Join voice channels |
+| Speak | Play audio in voice channels |
+| Use Voice Activity | Required for voice channel operation |
+
+Use this URL, replacing `YOUR_CLIENT_ID` with your bot's application ID from the [Discord Developer Portal](https://discord.com/developers/applications):
+
+```
+https://discord.com/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=274914626560&scope=bot%20applications.commands
+```
+
+The permission integer `274914626560` encodes exactly the seven permissions above — no administrator or unrelated permissions are requested.
+
 ## Quick Start (Docker)
 
 Use the published image from this fork:

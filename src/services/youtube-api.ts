@@ -233,7 +233,7 @@ export default class {
     shouldSplitChapters?: boolean;
   }): SongMetadata[] {
     if (video.contentDetails.contentRating?.ytRating === 'ytAgeRestricted') {
-      throw new Error(`"${video.snippet.title}" is age-restricted and cannot be played correctly due to issues with YouTube's API. It has not been added.`);
+      throw new Error(`["${video.snippet.title}"](<https://www.youtube.com/watch?v=${video.id}>) is age-restricted and cannot be played correctly due to issues with YouTube's API. It has not been added.`);
     }
 
     const base: SongMetadata = {

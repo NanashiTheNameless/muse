@@ -155,7 +155,7 @@ export default class {
         status: 'online',
       });
 
-      console.log(`Ready! Invite the bot with https://discordapp.com/oauth2/authorize?client_id=${this.client.user?.id ?? ''}&scope=bot%20applications.commands&permissions=36701184`);
+      console.log(`Ready! Invite the bot with https://discord.com/oauth2/authorize?client_id=${this.client.user?.id ?? ''}&permissions=274914626560&scope=bot%20applications.commands`);
     });
 
     this.client.on('error', console.error);
