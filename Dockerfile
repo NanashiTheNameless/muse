@@ -55,6 +55,8 @@ RUN set -eux; \
     else \
       deno_version="$(curl -fsSL https://dl.deno.land/release-latest.txt)"; \
     fi; \
+    # normalize: strip leading 'v' if present (release-latest may include a 'v')
+    deno_version="${deno_version#v}"; \
     mkdir -p /opt/deno/bin; \
     curl -fsSL "https://dl.deno.land/release/v${deno_version}/deno-${deno_target}.zip" -o /tmp/deno.zip; \
     unzip -q /tmp/deno.zip -d /opt/deno/bin; \
@@ -85,6 +87,9 @@ RUN apt-get update \
 COPY package.json .
 COPY yarn.lock .
 COPY .yarnrc.yml .
+
+# Ensure Corepack is enabled and Yarn v4 is prepared/activated for this build
+RUN corepack enable && corepack prepare yarn@4 --activate
 
 RUN --mount=type=cache,target=/usr/local/share/.cache/yarn \
   yarn install --immutable
