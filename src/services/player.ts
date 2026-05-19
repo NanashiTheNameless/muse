@@ -1,4 +1,4 @@
-import {VoiceChannel, Snowflake} from 'discord.js';
+import {PermissionsBitField, VoiceChannel, Snowflake} from 'discord.js';
 import {Readable} from 'stream';
 import {setTimeout as sleep} from 'timers/promises';
 import hasha from 'hasha';
@@ -102,6 +102,18 @@ export default class {
     const {defaultVolume = DEFAULT_VOLUME} = settings;
     this.defaultVolume = defaultVolume;
 
+    const botMember = channel.guild.members.me;
+    const permissions = botMember ? channel.permissionsFor(botMember) : null;
+    const canView = permissions?.has(PermissionsBitField.Flags.ViewChannel) ?? false;
+    const canConnect = permissions?.has(PermissionsBitField.Flags.Connect) ?? false;
+    const canSpeak = permissions?.has(PermissionsBitField.Flags.Speak) ?? false;
+    const canUseVAD = permissions?.has(PermissionsBitField.Flags.UseVAD) ?? false;
+    debug(`Voice permissions: guild=${channel.guild.id} channel=${channel.id} view=${String(canView)} connect=${String(canConnect)} speak=${String(canSpeak)} useVAD=${String(canUseVAD)}`);
+
+    if (!canView || !canConnect || !canSpeak) {
+      throw new Error(`I need View Channel, Connect, and Speak permissions for "${channel.name}" before I can join.`);
+    }
+
     const voiceConnection = joinVoiceChannel({
       channelId: channel.id,
       guildId: channel.guild.id,
@@ -129,13 +141,17 @@ export default class {
       }
     });
 
+    voiceConnection.on('error', error => {
+      debug(`Voice connection error: ${error.message}`);
+    });
+
     voiceConnection.on(VoiceConnectionStatus.Disconnected, this.onVoiceConnectionDisconnect.bind(this));
 
     try {
       await this.waitForVoiceConnectionReady(voiceConnection);
     } catch {
       const {status} = voiceConnection.state;
-      voiceConnection.destroy();
+      this.destroyVoiceConnection(voiceConnection);
       this.voiceConnection = null;
       throw new Error(`Failed to connect to the voice channel (last state: ${status}, rejoin attempts: ${voiceConnection.rejoinAttempts}, recent states: ${stateTransitions.join(' -> ')}).`);
     }
@@ -148,7 +164,7 @@ export default class {
       }
 
       this.loopCurrentSong = false;
-      this.voiceConnection.destroy();
+      this.destroyVoiceConnection(this.voiceConnection);
       this.audioPlayer?.stop(true);
 
       this.voiceConnection = null;
@@ -641,6 +657,12 @@ export default class {
 
   private async waitForVoiceConnectionReady(voiceConnection: VoiceConnection): Promise<void> {
     await entersState(voiceConnection, VoiceConnectionStatus.Ready, 60_000);
+  }
+
+  private destroyVoiceConnection(voiceConnection: VoiceConnection): void {
+    if (voiceConnection.state.status !== VoiceConnectionStatus.Destroyed) {
+      voiceConnection.destroy();
+    }
   }
 
   private async onAudioPlayerIdle(_oldState: AudioPlayerState, newState: AudioPlayerState): Promise<void> {
