@@ -1,4 +1,4 @@
-import * as makeDir from 'make-dir';
+import {makeDirectory} from 'make-dir';
 import path from 'path';
 import container from './inversify.config.js';
 import {TYPES} from './types.js';
@@ -14,9 +14,9 @@ const startBot = async () => {
   // Create data directories if necessary
   const config = container.get<Config>(TYPES.Config);
 
-  await (makeDir as any)(config.DATA_DIR);
-  await (makeDir as any)(config.CACHE_DIR);
-  await (makeDir as any)(path.join(config.CACHE_DIR, 'tmp'));
+  await makeDirectory(config.DATA_DIR);
+  await makeDirectory(config.CACHE_DIR);
+  await makeDirectory(path.join(config.CACHE_DIR, 'tmp'));
 
   await container.get<FileCacheProvider>(TYPES.FileCache).cleanup();
   await prepareYtDlp(config);

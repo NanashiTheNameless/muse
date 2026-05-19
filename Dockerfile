@@ -91,9 +91,9 @@ ENV YARN_ENABLE_INLINE_BUILDS=1
 RUN --mount=type=cache,target=/usr/local/share/.cache/yarn \
   yarn install --immutable
 
-# Copy only prod deps for runner stage
+# Copy deps for runner stage while preserving hidden entries like .bin
 RUN mkdir -p /usr/app/prod_node_modules && \
-  cp -R node_modules/* /usr/app/prod_node_modules/
+  cp -a /usr/app/node_modules/. /usr/app/prod_node_modules/
 
 FROM dependencies AS builder
 

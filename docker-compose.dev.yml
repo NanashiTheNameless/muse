@@ -1,6 +1,8 @@
 services:
   muse:
-    image: ghcr.io/nanashithenameless/muse:latest
+    image: muse
+    build:
+      context: .
     restart: unless-stopped
     volumes:
       - ./data:/data
@@ -11,3 +13,4 @@ services:
       DATA_DIR: /data
       DATABASE_URL: "file:/data/prisma.db"
       YT_DLP_COOKIES_PATH: "/cookies.txt"
+

@@ -3,6 +3,7 @@
 import {execa, ExecaError} from 'execa';
 import {promises as fs} from 'fs';
 import Prisma from '@prisma/client';
+import {PrismaBetterSqlite3} from '@prisma/adapter-better-sqlite3';
 import {startBot} from '../index.js';
 import createDatabaseUrl, {createDatabasePath} from '../utils/create-database-url.js';
 import {DATA_DIR} from '../services/config.js';
@@ -24,7 +25,9 @@ const doesUserHaveExistingDatabase = async () => {
 };
 
 const hasDatabaseBeenMigratedToPrisma = async () => {
-  const client = new Prisma.PrismaClient();
+  const client = new Prisma.PrismaClient({
+    adapter: new PrismaBetterSqlite3({url: process.env.DATABASE_URL}),
+  });
 
   try {
     await client.$queryRaw`SELECT COUNT(id) FROM _prisma_migrations`;
