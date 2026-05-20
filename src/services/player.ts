@@ -63,7 +63,19 @@ export interface PlayerEvents {
 
 export const DEFAULT_VOLUME = 50;
 
-export default class {
+export interface PlayerPublic {
+  getPosition(): number;
+  getCurrent(): QueuedSong | null;
+  status: STATUS;
+  loopCurrentSong: boolean;
+  loopCurrentQueue: boolean;
+  getVolume(): number;
+  isVolumeOverridden(): boolean;
+  getOverriddenTarget(): number | null;
+  getPreDuckingVolume(): number | null;
+}
+
+export default class Player implements PlayerPublic {
   public voiceConnection: VoiceConnection | null = null;
   public status = STATUS.PAUSED;
   public guildId: string;
@@ -91,6 +103,24 @@ export default class {
   private readonly channelToSpeakingUsers: Map<string, Set<string>> = new Map();
   private hasRegisteredVoiceActivityListener = false;
   private preDuckingVolume: number | null = null;
+  private duckInterval: NodeJS.Timeout | null = null;
+  private duckTargetVolume: number | null = null;
+  private ducking = false;
+  // Expose override info via public getters
+  public isVolumeOverridden(): boolean {
+    return this.preDuckingVolume !== null && this.duckTargetVolume !== null;
+  }
+
+  public getOverriddenTarget(): number | null {
+    return this.duckTargetVolume;
+  }
+
+  public getPreDuckingVolume(): number | null {
+    return this.preDuckingVolume;
+  }
+  private speakingSampleInProgress: Set<string> = new Set();
+  private speakingEma: Map<string, number> = new Map();
+  private speakingEndTimeouts: Map<string, NodeJS.Timeout> = new Map();
 
   constructor(fileCache: FileCacheProvider, guildId: string) {
     this.fileCache = fileCache;
@@ -361,42 +391,122 @@ export default class {
     if (!turnDownVolumeWhenPeopleSpeak || !this.voiceConnection) {
       return;
     }
+    const audioThreshold = (guildSettings as any).turnDownVolumeWhenPeopleSpeakThreshold ?? 4; // percent RMS
 
     this.voiceConnection.receiver.speaking.on('start', (userId: string) => {
-      if (!this.currentChannel) {
-        return;
+      if (!this.currentChannel) return;
+
+      // If a restore timer was pending for this user, cancel it (they resumed)
+      const pendingEnd = this.speakingEndTimeouts.get(userId);
+      if (pendingEnd) {
+        clearTimeout(pendingEnd);
+        this.speakingEndTimeouts.delete(userId);
       }
 
-      const member = this.currentChannel.members.get(userId);
-      const channelId = this.currentChannel?.id;
-
-      if (member) {
-        if (!this.channelToSpeakingUsers.has(channelId)) {
-          this.channelToSpeakingUsers.set(channelId, new Set());
-        }
-
-        this.channelToSpeakingUsers.get(channelId)?.add(member.id);
-      }
-
-      this.suppressVoiceWhenPeopleAreSpeaking(turnDownVolumeWhenPeopleSpeakTarget);
-    });
-
-    this.voiceConnection.receiver.speaking.on('end', (userId: string) => {
-      if (!this.currentChannel) {
-        return;
-      }
+      // If we're already sampling this user, ignore duplicate start
+      if (this.speakingSampleInProgress.has(userId)) return;
 
       const member = this.currentChannel.members.get(userId);
       const channelId = this.currentChannel.id;
-      if (member) {
-        if (!this.channelToSpeakingUsers.has(channelId)) {
-          this.channelToSpeakingUsers.set(channelId, new Set());
-        }
 
-        this.channelToSpeakingUsers.get(channelId)?.delete(member.id);
+      const markAsSpeaking = () => {
+        if (!member) return;
+        // cancel pending end just in case
+        const p = this.speakingEndTimeouts.get(userId);
+        if (p) { clearTimeout(p); this.speakingEndTimeouts.delete(userId); }
+        if (!this.channelToSpeakingUsers.has(channelId)) this.channelToSpeakingUsers.set(channelId, new Set());
+        this.channelToSpeakingUsers.get(channelId)?.add(member.id);
+        this.suppressVoiceWhenPeopleAreSpeaking(turnDownVolumeWhenPeopleSpeakTarget);
+      };
+
+      // If threshold is 0 or negative, treat any start as speech
+      if (audioThreshold <= 0) {
+        markAsSpeaking();
+        return;
       }
 
-      this.suppressVoiceWhenPeopleAreSpeaking(turnDownVolumeWhenPeopleSpeakTarget);
+      // Try to sample a short PCM snippet to estimate audio RMS if receiver supports it.
+      try {
+        const receiverAny: any = (this.voiceConnection as any).receiver;
+        const createStreamFn = receiverAny?.createStream ?? receiverAny?.subscribe;
+
+        if (typeof createStreamFn === 'function') {
+          this.speakingSampleInProgress.add(userId);
+          const SAMPLE_MS = 200;
+          const pcmStream = receiverAny.createStream
+            ? receiverAny.createStream(userId, { mode: 'pcm' })
+            : receiverAny.subscribe(userId, { mode: 'pcm' });
+
+          let totalSquares = 0;
+          let sampleCount = 0;
+
+          const onData = (chunk: Buffer) => {
+            // Interpret buffer as signed 16-bit LE PCM
+            for (let i = 0; i + 1 < chunk.length; i += 2) {
+              const sample = chunk.readInt16LE(i);
+              totalSquares += sample * sample;
+              sampleCount++;
+            }
+          };
+
+          pcmStream.on('data', onData);
+
+          const timeout = setTimeout(() => {
+            try {
+              pcmStream.off('data', onData);
+              try { pcmStream.destroy?.(); } catch {}
+            } catch {}
+
+            this.speakingSampleInProgress.delete(userId);
+
+            const meanSquare = sampleCount === 0 ? 0 : (totalSquares / sampleCount);
+            const rms = Math.sqrt(meanSquare);
+            const rmsPercent = Math.min(100, Math.round((rms / 32768) * 100));
+
+            const prev = this.speakingEma.get(userId) ?? 0;
+            const alpha = 0.3;
+            const ema = Math.round((alpha * rmsPercent + (1 - alpha) * prev) * 100) / 100;
+            this.speakingEma.set(userId, ema);
+
+            if (ema >= audioThreshold) {
+              markAsSpeaking();
+            }
+          }, SAMPLE_MS);
+
+          return;
+        }
+      } catch (e) {
+        // fall through
+      }
+
+      // If PCM sampling isn't available, optimistically count start as speech
+      markAsSpeaking();
+    });
+
+    this.voiceConnection.receiver.speaking.on('end', (userId: string) => {
+      if (!this.currentChannel) return;
+
+      // Cancel any sample-in-progress for this user
+      if (this.speakingSampleInProgress.has(userId)) this.speakingSampleInProgress.delete(userId);
+
+      const channelId = this.currentChannel.id;
+      const member = this.currentChannel.members.get(userId);
+
+      // Clear any existing end timeout and schedule a new 500ms delayed removal.
+      const existing = this.speakingEndTimeouts.get(userId);
+      if (existing) { clearTimeout(existing); this.speakingEndTimeouts.delete(userId); }
+
+      const t = setTimeout(() => {
+        this.speakingEndTimeouts.delete(userId);
+        if (!this.currentChannel) return;
+        const member2 = this.currentChannel.members.get(userId);
+        if (member2 && this.channelToSpeakingUsers.has(channelId)) {
+          this.channelToSpeakingUsers.get(channelId)?.delete(member2.id);
+          this.suppressVoiceWhenPeopleAreSpeaking(turnDownVolumeWhenPeopleSpeakTarget);
+        }
+      }, 500);
+
+      this.speakingEndTimeouts.set(userId, t);
     });
   }
 
@@ -415,12 +525,20 @@ export default class {
         if (this.preDuckingVolume === null) {
           this.preDuckingVolume = currentVol;
         }
-        this.setVolume(turnDownVolumeWhenPeopleSpeakTarget);
+        // Track current duck target and mark ducking state
+        this.duckTargetVolume = turnDownVolumeWhenPeopleSpeakTarget;
+        this.ducking = true;
+        // Ramp down quickly for responsiveness
+        void this.rampVolumeTo(turnDownVolumeWhenPeopleSpeakTarget, 180);
       }
     } else if (this.preDuckingVolume !== null) {
-      // Restore to volume before ducking started
-      this.setVolume(this.preDuckingVolume);
+      // Restore to volume before ducking started with a smooth ramp
+      const restoreTo = this.preDuckingVolume;
       this.preDuckingVolume = null;
+      this.duckTargetVolume = null;
+      this.ducking = false;
+      // Ramp up a bit slower for smoothness
+      void this.rampVolumeTo(restoreTo, 600);
     }
   }
 
@@ -554,6 +672,46 @@ export default class {
   getVolume(): number {
     // Only use default volume if player volume is not already set (in the event of a reconnect we shouldn't reset)
     return this.volume ?? this.defaultVolume;
+  }
+
+  /**
+   * Smoothly ramp the player volume to `target` over `durationMs` milliseconds.
+   * Cancels any in-progress ramp and resolves when finished.
+   */
+  private rampVolumeTo(target: number, durationMs = 300): Promise<void> {
+    if (this.duckInterval) {
+      clearInterval(this.duckInterval);
+      this.duckInterval = null;
+    }
+
+    const start = this.getVolume();
+    const clampedTarget = Math.max(0, Math.min(100, target));
+
+    if (durationMs <= 0 || start === clampedTarget) {
+      this.setVolume(clampedTarget);
+      return Promise.resolve();
+    }
+
+    const stepMs = 40; // smoothness step (ms)
+    const steps = Math.max(1, Math.round(durationMs / stepMs));
+    let currentStep = 0;
+
+    return new Promise(resolve => {
+      this.duckInterval = setInterval(() => {
+        currentStep++;
+        const progress = Math.min(1, currentStep / steps);
+        const next = Math.round((start + (clampedTarget - start) * progress) * 100) / 100;
+        this.setVolume(next);
+
+        if (progress >= 1) {
+          if (this.duckInterval) {
+            clearInterval(this.duckInterval);
+            this.duckInterval = null;
+          }
+          resolve();
+        }
+      }, stepMs);
+    });
   }
 
   private getHashForCache(url: string): string {

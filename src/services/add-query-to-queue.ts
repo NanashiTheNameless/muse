@@ -139,13 +139,14 @@ export default class AddQueryToQueue {
     // When inserting at the front one-by-one, each song lands at position 1,
     // pushing the previous to position 2 — so iterate in reverse to preserve order.
     const songsToAdd = addToFrontOfQueue && newSongs.length > 1 ? [...newSongs].reverse() : newSongs;
-    songsToAdd.forEach(song => {
-      player.add({
-        ...song,
-        addedInChannelId: interaction.channel!.id,
-        requestedBy: interaction.member!.user.id,
-      }, {immediate: addToFrontOfQueue ?? false});
-    });
+
+    // Prepare song objects but don't add to the player's queue until we've
+    // successfully joined the voice channel — if join fails we must not add them.
+    const preparedSongs = songsToAdd.map(song => ({
+      ...song,
+      addedInChannelId: interaction.channel!.id,
+      requestedBy: interaction.member!.user.id,
+    }));
 
     const firstSong = newSongs[0];
 
@@ -156,6 +157,11 @@ export default class AddQueryToQueue {
       debug(`Voice join started: guild=${guildId} channel=${targetVoiceChannel.id}`);
       await player.connect(targetVoiceChannel);
       debug(`Voice join finished: guild=${guildId} channel=${targetVoiceChannel.id}`);
+
+      // Add songs only after successful connect
+      preparedSongs.forEach(song => {
+        player.add(song, {immediate: addToFrontOfQueue ?? false});
+      });
 
       // Resume / start playback
       await interaction.editReply('Starting playback...');
@@ -170,9 +176,16 @@ export default class AddQueryToQueue {
       await interaction.editReply({
         embeds: [buildPlayingMessageEmbed(player)],
       });
-    } else if (player.status === STATUS.IDLE) {
-      // Player is idle, start playback instead
-      await player.play();
+    } else {
+      // Already connected — add songs now.
+      preparedSongs.forEach(song => {
+        player.add(song, {immediate: addToFrontOfQueue ?? false});
+      });
+
+      if (player.status === STATUS.IDLE) {
+        // Player is idle, start playback instead
+        await player.play();
+      }
     }
 
     if (skipCurrentTrack) {

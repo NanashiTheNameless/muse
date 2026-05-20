@@ -1,5 +1,5 @@
 import {EmbedBuilder} from 'discord.js';
-import Player, {STATUS} from '../services/player.js';
+import Player, {STATUS, PlayerPublic} from '../services/player.js';
 import getProgressBar from './get-progress-bar.js';
 import {prettyTime} from './time.js';
 import {getSongTitle} from './song-title.js';
@@ -13,7 +13,7 @@ const getQueueInfo = (player: Player) => {
   return queueSize === 1 ? '1 song' : `${queueSize} songs`;
 };
 
-const getPlayerUI = (player: Player) => {
+const getPlayerUI = (player: PlayerPublic) => {
   const song = player.getCurrent();
 
   if (!song) {
@@ -26,7 +26,10 @@ const getPlayerUI = (player: Player) => {
   const elapsedTime = song.isLive ? 'live' : `${prettyTime(position)}/${prettyTime(song.length)}`;
   const loop = player.loopCurrentSong ? '[loop-song]' : player.loopCurrentQueue ? '[loop-queue]' : '';
   const vol: string = typeof player.getVolume() === 'number' ? `${player.getVolume()!}%` : '';
-  return `${indicator} ${progressBar} \`[${elapsedTime}]\` vol ${vol} ${loop}`;
+  const overrideText = player.isVolumeOverridden()
+    ? ` (overridden to ${player.getOverriddenTarget()}% due to speaking)`
+    : '';
+  return `${indicator} ${progressBar} \`[${elapsedTime}]\` vol ${vol}${overrideText} ${loop}`;
 };
 
 export const buildPlayingMessageEmbed = (player: Player): EmbedBuilder => {

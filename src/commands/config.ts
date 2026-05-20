@@ -64,6 +64,15 @@ export default class implements Command {
         .setMaxValue(100)
         .setRequired(true)))
     .addSubcommand(subcommand => subcommand
+      .setName('set-reduce-vol-when-voice-threshold')
+      .setDescription('Set the RMS threshold (percent) to detect speech vs noise')
+      .addIntegerOption(option => option
+        .setName('threshold')
+        .setDescription('RMS percent (0-100). Lower is more sensitive. Default 4')
+        .setMinValue(0)
+        .setMaxValue(100)
+        .setRequired(true)))
+    .addSubcommand(subcommand => subcommand
       .setName('set-auto-announce-next-song')
       .setDescription('Set whether to announce the next song in the queue automatically')
       .addBooleanOption(option => option
@@ -262,6 +271,23 @@ export default class implements Command {
         break;
       }
 
+      case 'set-reduce-vol-when-voice-threshold': {
+        const value = interaction.options.getInteger('threshold')!;
+
+        await prisma.setting.update({
+          where: {
+            guildId: interaction.guild!.id,
+          },
+          data: {
+            turnDownVolumeWhenPeopleSpeakThreshold: value,
+          },
+        });
+
+        await interaction.reply('Turn down volume detection threshold updated.');
+
+        break;
+      }
+
       case 'get': {
         const embed = new EmbedBuilder().setTitle('Config');
 
@@ -278,6 +304,7 @@ export default class implements Command {
           'Default Volume': config.defaultVolume,
           'Default queue page size': config.defaultQueuePageSize,
           'Reduce volume when people speak': config.turnDownVolumeWhenPeopleSpeak ? 'Yes' : 'No',
+          'Reduce volume detection threshold (RMS%)': (config as any).turnDownVolumeWhenPeopleSpeakThreshold ?? 4,
         };
 
         let description = '';
