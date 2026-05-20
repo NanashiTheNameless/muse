@@ -387,11 +387,11 @@ export default class Player implements PlayerPublic {
   }
 
   registerVoiceActivityListener(guildSettings: Awaited<ReturnType<typeof getGuildSettings>>) {
-    const {turnDownVolumeWhenPeopleSpeak, turnDownVolumeWhenPeopleSpeakTarget} = guildSettings;
-    if (!turnDownVolumeWhenPeopleSpeak || !this.voiceConnection) {
+    const {volumeDucking, volumeDuckingTarget} = guildSettings;
+    if (!volumeDucking || !this.voiceConnection) {
       return;
     }
-    const audioThreshold = (guildSettings as any).turnDownVolumeWhenPeopleSpeakThreshold ?? 4; // percent RMS
+    const audioThreshold = (guildSettings as any).volumeDuckingThreshold ?? 4; // percent RMS
 
     this.voiceConnection.receiver.speaking.on('start', (userId: string) => {
       if (!this.currentChannel) return;
@@ -416,7 +416,7 @@ export default class Player implements PlayerPublic {
         if (p) { clearTimeout(p); this.speakingEndTimeouts.delete(userId); }
         if (!this.channelToSpeakingUsers.has(channelId)) this.channelToSpeakingUsers.set(channelId, new Set());
         this.channelToSpeakingUsers.get(channelId)?.add(member.id);
-        this.suppressVoiceWhenPeopleAreSpeaking(turnDownVolumeWhenPeopleSpeakTarget);
+        this.suppressVoiceWhenPeopleAreSpeaking(volumeDuckingTarget);
       };
 
       // If threshold is 0 or negative, treat any start as speech
@@ -502,7 +502,7 @@ export default class Player implements PlayerPublic {
         const member2 = this.currentChannel.members.get(userId);
         if (member2 && this.channelToSpeakingUsers.has(channelId)) {
           this.channelToSpeakingUsers.get(channelId)?.delete(member2.id);
-          this.suppressVoiceWhenPeopleAreSpeaking(turnDownVolumeWhenPeopleSpeakTarget);
+          this.suppressVoiceWhenPeopleAreSpeaking(volumeDuckingTarget);
         }
       }, 500);
 
@@ -510,7 +510,7 @@ export default class Player implements PlayerPublic {
     });
   }
 
-  suppressVoiceWhenPeopleAreSpeaking(turnDownVolumeWhenPeopleSpeakTarget: number): void {
+  suppressVoiceWhenPeopleAreSpeaking(volumeDuckingTarget: number): void {
     if (!this.currentChannel) {
       return;
     }
@@ -521,15 +521,15 @@ export default class Player implements PlayerPublic {
     
     if (isSpeaking) {
       // Only duck if target is lower than current volume
-      if (turnDownVolumeWhenPeopleSpeakTarget < currentVol) {
+      if (volumeDuckingTarget < currentVol) {
         if (this.preDuckingVolume === null) {
           this.preDuckingVolume = currentVol;
         }
         // Track current duck target and mark ducking state
-        this.duckTargetVolume = turnDownVolumeWhenPeopleSpeakTarget;
+        this.duckTargetVolume = volumeDuckingTarget;
         this.ducking = true;
         // Ramp down quickly for responsiveness
-        void this.rampVolumeTo(turnDownVolumeWhenPeopleSpeakTarget, 180);
+        void this.rampVolumeTo(volumeDuckingTarget, 180);
       }
     } else if (this.preDuckingVolume !== null) {
       // Restore to volume before ducking started with a smooth ramp

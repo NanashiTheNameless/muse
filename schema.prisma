@@ -32,9 +32,9 @@ model Setting {
   autoAnnounceNextSong                Boolean  @default(true)
   defaultVolume                       Int      @default(25)
   defaultQueuePageSize                Int      @default(10)
-  turnDownVolumeWhenPeopleSpeak       Boolean  @default(true)
-  turnDownVolumeWhenPeopleSpeakTarget Int      @default(5)
-  turnDownVolumeWhenPeopleSpeakThreshold Int   @default(4)
+  volumeDucking                       Boolean  @default(true)
+  volumeDuckingTarget                 Int      @default(5)
+  volumeDuckingThreshold              Int      @default(4)
   createdAt                           DateTime @default(now())
   updatedAt                           DateTime @updatedAt
 }

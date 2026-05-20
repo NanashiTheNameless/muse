@@ -48,14 +48,14 @@ export default class implements Command {
         .setDescription('Whether bot responses to queue additions are only displayed to the requester')
         .setRequired(true)))
     .addSubcommand(subcommand => subcommand
-      .setName('set-reduce-vol-when-voice')
+      .setName('set-duck')
       .setDescription('Set whether to turn down the volume when people speak')
       .addBooleanOption(option => option
         .setName('value')
         .setDescription('Whether to turn down the volume when people speak')
         .setRequired(true)))
     .addSubcommand(subcommand => subcommand
-      .setName('set-reduce-vol-when-voice-target')
+      .setName('set-duck-target')
       .setDescription('Set the target volume when people speak')
       .addIntegerOption(option => option
         .setName('volume')
@@ -237,7 +237,7 @@ export default class implements Command {
         break;
       }
 
-      case 'set-reduce-vol-when-voice': {
+      case 'set-duck': {
         const value = interaction.options.getBoolean('value')!;
 
         await prisma.setting.update({
@@ -245,7 +245,7 @@ export default class implements Command {
             guildId: interaction.guild!.id,
           },
           data: {
-            turnDownVolumeWhenPeopleSpeak: value,
+            volumeDucking: value,
           },
         });
 
@@ -254,7 +254,7 @@ export default class implements Command {
         break;
       }
 
-      case 'set-reduce-vol-when-voice-target': {
+      case 'set-duck-target': {
         const value = interaction.options.getInteger('volume')!;
 
         await prisma.setting.update({
@@ -262,7 +262,7 @@ export default class implements Command {
             guildId: interaction.guild!.id,
           },
           data: {
-            turnDownVolumeWhenPeopleSpeakTarget: value,
+            volumeDuckingTarget: value,
           },
         });
 
@@ -279,7 +279,7 @@ export default class implements Command {
             guildId: interaction.guild!.id,
           },
           data: {
-            turnDownVolumeWhenPeopleSpeakThreshold: value,
+            volumeDuckingThreshold: value,
           },
         });
 
@@ -303,8 +303,8 @@ export default class implements Command {
           'Add to queue responses show for requester only': config.queueAddResponseEphemeral ? 'Yes' : 'No',
           'Default Volume': config.defaultVolume,
           'Default queue page size': config.defaultQueuePageSize,
-          'Reduce volume when people speak': config.turnDownVolumeWhenPeopleSpeak ? 'Yes' : 'No',
-          'Reduce volume detection threshold (RMS%)': (config as any).turnDownVolumeWhenPeopleSpeakThreshold ?? 4,
+          'Reduce volume when people speak': config.volumeDucking ? 'Yes' : 'No',
+          'Reduce volume detection threshold (RMS%)': (config as any).volumeDuckingThreshold ?? 4,
         };
 
         let description = '';
