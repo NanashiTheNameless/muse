@@ -46,21 +46,24 @@ export default class {
 
     if (YOUTUBE_HOSTS.includes(url.host)) {
       const cleanedUrl = cleanUrl(url.href);
-      const videoId = getYouTubeID(cleanedUrl);
-
-      if (videoId) {
-        const songs = await this.youtubeVideo(cleanedUrl, shouldSplitChapters);
-
-        if (songs) {
-          newSongs.push(...songs);
-        } else {
-          throw new Error('That does not exist.');
-        }
-      } else if (url.searchParams.get('list')) {
+      // If a playlist param is present, treat the URL as a playlist even when a video id is also present.
+      if (url.searchParams.get('list')) {
         // YouTube playlist
         newSongs.push(...await this.youtubePlaylist(url.searchParams.get('list')!, shouldSplitChapters));
       } else {
-        throw new Error('That does not exist.');
+        const videoId = getYouTubeID(cleanedUrl);
+
+        if (videoId) {
+          const songs = await this.youtubeVideo(cleanedUrl, shouldSplitChapters);
+
+          if (songs) {
+            newSongs.push(...songs);
+          } else {
+            throw new Error('That does not exist.');
+          }
+        } else {
+          throw new Error('That does not exist.');
+        }
       }
     } else {
       const song = await this.arbitraryUrl(query);
