@@ -64,7 +64,7 @@ export default class implements Command {
         .setMaxValue(100)
         .setRequired(true)))
     .addSubcommand(subcommand => subcommand
-      .setName('set-reduce-vol-when-voice-threshold')
+      .setName('set-duck-threshold')
       .setDescription('Set the RMS threshold (percent) to detect speech vs noise')
       .addIntegerOption(option => option
         .setName('threshold')
@@ -271,7 +271,7 @@ export default class implements Command {
         break;
       }
 
-      case 'set-reduce-vol-when-voice-threshold': {
+      case 'set-duck-threshold': {
         const value = interaction.options.getInteger('threshold')!;
 
         await prisma.setting.update({
