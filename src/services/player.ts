@@ -392,8 +392,6 @@ export default class Player implements PlayerPublic {
       return;
     }
 
-    const audioThreshold = (guildSettings as any).volumeDuckingThreshold ?? 10; // percent MAV
-
     this.voiceConnection.receiver.speaking.on('start', (userId: string) => {
       if (!this.currentChannel) return;
 
@@ -403,9 +401,6 @@ export default class Player implements PlayerPublic {
         clearTimeout(pendingEnd);
         this.speakingEndTimeouts.delete(userId);
       }
-
-      // If we're already sampling this user, ignore duplicate start
-      if (this.speakingSampleInProgress.has(userId)) return;
 
       const member = this.currentChannel.members.get(userId);
       const channelId = this.currentChannel.id;
@@ -423,68 +418,10 @@ export default class Player implements PlayerPublic {
       // Only consider real (non-bot) users for ducking
       if (!member || member.user?.bot) return;
 
-      // If threshold is 0 or negative, treat any start as speech
-      if (audioThreshold <= 0) {
-        markAsSpeaking();
-        return;
-      }
-
-      // Try to sample a short PCM snippet to estimate audio MAV if receiver supports it.
-      try {
-        const receiverAny: any = (this.voiceConnection as any).receiver;
-        const createStreamFn = receiverAny?.createStream ?? receiverAny?.subscribe;
-
-        if (typeof createStreamFn === 'function') {
-          this.speakingSampleInProgress.add(userId);
-          const SAMPLE_MS = 200;
-          const pcmStream = receiverAny.createStream
-            ? receiverAny.createStream(userId, { mode: 'pcm' })
-            : receiverAny.subscribe(userId, { mode: 'pcm' });
-
-
-          let totalAbs = 0;
-          let sampleCount = 0;
-
-          const onData = (chunk: Buffer) => {
-            // Interpret buffer as signed 16-bit LE PCM and accumulate absolute values (MAV)
-            for (let i = 0; i + 1 < chunk.length; i += 2) {
-              const sample = chunk.readInt16LE(i);
-              totalAbs += Math.abs(sample);
-              sampleCount++;
-            }
-          };
-
-          pcmStream.on('data', onData);
-
-          const timeout = setTimeout(() => {
-            try {
-              pcmStream.off('data', onData);
-              try { pcmStream.destroy?.(); } catch {}
-            } catch {}
-
-            this.speakingSampleInProgress.delete(userId);
-
-            const avgAbs = sampleCount === 0 ? 0 : (totalAbs / sampleCount);
-            const absPercent = Math.min(100, Math.round((avgAbs / 32768) * 100));
-
-            const prev = this.speakingEma.get(userId) ?? 0;
-            const alpha = 0.3;
-            const ema = Math.round((alpha * absPercent + (1 - alpha) * prev) * 100) / 100;
-            this.speakingEma.set(userId, ema);
-
-            if (ema >= audioThreshold) {
-              markAsSpeaking();
-            }
-          }, SAMPLE_MS);
-
-          return;
-        }
-      } catch (e) {
-        // fall through
-      }
-
-      // If PCM sampling isn't available, optimistically count start as speech
+      // Fast-path: use Discord speaking flag to mark as speaking immediately
+      // We no longer sample audio; the detection is based solely on the speaking flag.
       markAsSpeaking();
+      return;
     });
 
     this.voiceConnection.receiver.speaking.on('end', (userId: string) => {

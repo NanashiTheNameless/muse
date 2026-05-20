@@ -34,7 +34,6 @@ model Setting {
   defaultQueuePageSize                Int      @default(10)
   volumeDucking                       Boolean  @default(true)
   volumeDuckingTarget                 Int      @default(10)
-  volumeDuckingThreshold              Int      @default(10)
   createdAt                           DateTime @default(now())
   updatedAt                           DateTime @updatedAt
 }

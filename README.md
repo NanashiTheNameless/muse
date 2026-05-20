@@ -111,8 +111,7 @@ This project requires Node.js 24.15.0 or newer.
 Notes on voice ducking
 ---------------------
 
-- Ducking is triggered on non-bot users emitting speech (based on Discord `speaking` events).
- - The `set-duck-threshold` command sets the detection threshold (percent) based on Mean Absolute Value (MAV). Ducking will only trigger if a user's short PCM MAV exceeds this percentage. Lower values make ducking more sensitive. Default: 10%.
+ - Ducking is triggered on non-bot users emitting speech (based on Discord `speaking` events).
 
 
 ## Environment Variables

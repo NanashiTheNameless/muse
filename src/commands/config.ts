@@ -63,15 +63,7 @@ export default class implements Command {
         .setMinValue(0)
         .setMaxValue(100)
         .setRequired(true)))
-    .addSubcommand(subcommand => subcommand
-      .setName('set-duck-threshold')
-      .setDescription('Set the detection threshold (percent) to detect user speech using MAV')
-      .addIntegerOption(option => option
-        .setName('threshold')
-        .setDescription('Mean Absolute Value percent (0-100). Lower is more sensitive. Default 10')
-        .setMinValue(0)
-        .setMaxValue(100)
-        .setRequired(true)))
+    
     .addSubcommand(subcommand => subcommand
       .setName('set-auto-announce-next-song')
       .setDescription('Set whether to announce the next song in the queue automatically')
@@ -270,23 +262,7 @@ export default class implements Command {
 
         break;
       }
-
-      case 'set-duck-threshold': {
-        const value = interaction.options.getInteger('threshold')!;
-
-        await prisma.setting.update({
-          where: {
-            guildId: interaction.guild!.id,
-          },
-          data: {
-            volumeDuckingThreshold: value,
-          },
-        });
-
-        await interaction.reply('Turn down volume detection threshold updated.');
-
-        break;
-      }
+      
 
       case 'get': {
         const embed = new EmbedBuilder().setTitle('Config');
@@ -304,7 +280,6 @@ export default class implements Command {
           'Default Volume': config.defaultVolume,
           'Default queue page size': config.defaultQueuePageSize,
           'Reduce volume when people speak': config.volumeDucking ? 'Yes' : 'No',
-          'Reduce volume detection threshold': (config as any).volumeDuckingThreshold ?? 10,
         };
 
         let description = '';
