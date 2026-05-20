@@ -21,7 +21,7 @@ const getPlayerUI = (player: Player) => {
   }
 
   const position = player.getPosition();
-  const indicator = player.status === STATUS.PLAYING ? '[playing]' : '[paused]';
+  const indicator = player.status === STATUS.PLAYING ? '[playing]' : '[stopped]';
   const progressBar = getProgressBar(10, position / song.length);
   const elapsedTime = song.isLive ? 'live' : `${prettyTime(position)}/${prettyTime(song.length)}`;
   const loop = player.loopCurrentSong ? '[loop-song]' : player.loopCurrentQueue ? '[loop-queue]' : '';
