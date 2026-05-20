@@ -85,6 +85,7 @@ export default class AddQueryToQueue {
     songsToAdd.forEach(song => {
       player.add({
         ...song,
+        offset: 0,
         addedInChannelId: interaction.channel!.id,
         requestedBy: interaction.member!.user.id,
       }, {immediate: addToFrontOfQueue ?? false});
