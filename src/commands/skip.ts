@@ -53,7 +53,10 @@ export default class implements Command {
     const isAloneInVC = nonBotMembers !== null && nonBotMembers.size === 1 && nonBotMembers.has(userId);
 
     if (isInstanceOwner || hasManageGuild || isRequester || isAloneInVC) {
-      await interaction.deferReply();
+      if (!(await this.safeDeferReply(interaction))) {
+        return;
+      }
+
       try {
         // Ensure `/skip 1` skips only the current song
         if (numToSkip === 1) {
@@ -61,20 +64,24 @@ export default class implements Command {
             throw new Error('No song to skip to.');
           }
           await player.forward(1);
-          await interaction.editReply({
+          if (!(await this.safeEditReply(interaction, {
             content: 'Skipped the current song.',
             embeds: player.getCurrent() ? [buildPlayingMessageEmbed(player)] : [],
-          });
+          }))) {
+            return;
+          }
         } else {
           // Handle skipping multiple songs
           if (!player.canGoForward(numToSkip)) {
             throw new Error('Not enough songs in the queue to skip.');
           }
           await player.forward(numToSkip);
-          await interaction.editReply({
+          if (!(await this.safeEditReply(interaction, {
             content: `Skipped ${numToSkip} song(s).`,
             embeds: player.getCurrent() ? [buildPlayingMessageEmbed(player)] : [],
-          });
+          }))) {
+            return;
+          }
         }
       } catch (_: unknown) {
         throw new Error('No song to skip to.');
@@ -85,7 +92,7 @@ export default class implements Command {
 
     // Non-privileged users: vote to skip (only works for a single song)
     if (numToSkip > 1) {
-      await interaction.reply({
+      await this.safeReply(interaction, {
         content: 'You need Manage Server permission or to have requested the song to skip multiple songs.',
         flags: MessageFlags.Ephemeral,
       });
@@ -100,7 +107,7 @@ export default class implements Command {
     const othersCount = nonBotMembers.filter((m: GuildMember) => m.id !== currentSong.requestedBy).size;
 
     if (player.getSkipVotes().has(userId)) {
-      await interaction.reply({
+      await this.safeReply(interaction, {
         content: 'You have already voted to skip this song.',
         flags: MessageFlags.Ephemeral,
       });
@@ -111,10 +118,13 @@ export default class implements Command {
     const votes = player.getSkipVotes().size;
 
     if (votes > othersCount / 2) {
-      await interaction.deferReply();
+      if (!(await this.safeDeferReply(interaction))) {
+        return;
+      }
+
       try {
         await player.forward(1);
-        await interaction.editReply({
+        await this.safeEditReply(interaction, {
           content: `Vote skip passed (${votes}/${othersCount}). Skipped.`,
           embeds: player.getCurrent() ? [buildPlayingMessageEmbed(player)] : [],
         });
@@ -123,10 +133,60 @@ export default class implements Command {
       }
     } else {
       const needed = Math.floor(othersCount / 2) + 1;
-      await interaction.reply({
+      await this.safeReply(interaction, {
         content: `Skip vote registered (${votes}/${needed} votes needed).`,
         flags: MessageFlags.Ephemeral,
       });
+    }
+  }
+
+  private isUnknownInteractionError(error: unknown): boolean {
+    const code = (error as {code?: number}).code;
+    return code === 10062;
+  }
+
+  private async safeDeferReply(interaction: ChatInputCommandInteraction): Promise<boolean> {
+    try {
+      await interaction.deferReply();
+      return true;
+    } catch (error: unknown) {
+      if (this.isUnknownInteractionError(error)) {
+        return false;
+      }
+
+      throw error;
+    }
+  }
+
+  private async safeReply(
+    interaction: ChatInputCommandInteraction,
+    options: Parameters<ChatInputCommandInteraction['reply']>[0],
+  ): Promise<boolean> {
+    try {
+      await interaction.reply(options);
+      return true;
+    } catch (error: unknown) {
+      if (this.isUnknownInteractionError(error)) {
+        return false;
+      }
+
+      throw error;
+    }
+  }
+
+  private async safeEditReply(
+    interaction: ChatInputCommandInteraction,
+    options: Parameters<ChatInputCommandInteraction['editReply']>[0],
+  ): Promise<boolean> {
+    try {
+      await interaction.editReply(options);
+      return true;
+    } catch (error: unknown) {
+      if (this.isUnknownInteractionError(error)) {
+        return false;
+      }
+
+      throw error;
     }
   }
 }

@@ -80,10 +80,13 @@ export default class {
   private playPositionInterval: NodeJS.Timeout | undefined;
   private lastSongURL = '';
   private skipVotes = new Set<string>();
+  private unexpectedIdleSongUrl: string | null = null;
+  private unexpectedIdleRetries = 0;
 
   private positionInSeconds = 0;
   private readonly fileCache: FileCacheProvider;
   private disconnectTimer: NodeJS.Timeout | null = null;
+  private shouldIgnoreNextIdleEvent = false;
 
   private readonly channelToSpeakingUsers: Map<string, Set<string>> = new Map();
   private hasRegisteredVoiceActivityListener = false;
@@ -275,6 +278,12 @@ export default class {
 
       this.status = STATUS.PLAYING;
       this.nowPlaying = currentSong;
+
+      // We've successfully started playback for the requested song; clear transient ignore flag
+      if (this.shouldIgnoreNextIdleEvent) {
+        debug('play(): clearing shouldIgnoreNextIdleEvent after successful start', {url: currentSong.url});
+        this.shouldIgnoreNextIdleEvent = false;
+      }
 
       if (currentSong.url === this.lastSongURL) {
         this.startTrackingPosition();
@@ -564,8 +573,12 @@ export default class {
 
   private async getStream(song: QueuedSong, options: {seek?: number; to?: number} = {}): Promise<Readable> {
     if (this.status === STATUS.PLAYING) {
+      debug('getStream: pausing existing audio player to replace stream', {status: this.status, nowPlaying: this.nowPlaying?.url});
+      this.shouldIgnoreNextIdleEvent = true;
       this.audioPlayer?.stop();
     } else if (this.status === STATUS.PAUSED) {
+      debug('getStream: stopping existing audio player (paused) to replace stream', {status: this.status, nowPlaying: this.nowPlaying?.url});
+      this.shouldIgnoreNextIdleEvent = true;
       this.audioPlayer?.stop(true);
     }
 
@@ -672,10 +685,14 @@ export default class {
 
     const player = this.audioPlayer;
 
+    debug('attachListeners: binding idle listener', {hasPlayer: !!player});
+
     if (player.listeners(AudioPlayerStatus.Idle).length === 0) {
       player.on(AudioPlayerStatus.Idle, async (oldState, newState) => {
+        debug('audioPlayer Idle event fired', {oldStatus: oldState.status, newStatus: newState.status, nowPlaying: this.nowPlaying?.url});
         // Ignore idle events from players that are no longer active.
         if (this.audioPlayer !== player) {
+          debug('audioPlayer Idle: ignored because player instance changed');
           return;
         }
 
@@ -737,6 +754,44 @@ export default class {
   }
 
   private async onAudioPlayerIdle(_oldState: AudioPlayerState, newState: AudioPlayerState): Promise<void> {
+    debug('onAudioPlayerIdle: entry', {shouldIgnoreNextIdleEvent: this.shouldIgnoreNextIdleEvent, status: this.status, nowPlaying: this.nowPlaying?.url});
+
+    if (this.shouldIgnoreNextIdleEvent && newState.status === AudioPlayerStatus.Idle) {
+      debug('onAudioPlayerIdle: ignoring idle due to transition flag');
+      this.shouldIgnoreNextIdleEvent = false;
+      return;
+    }
+
+    const currentSong = this.getCurrent();
+
+    if (newState.status === AudioPlayerStatus.Idle && this.status === STATUS.PLAYING && currentSong && !currentSong.isLive) {
+      const remainingSeconds = currentSong.length - this.getPosition();
+      const UNEXPECTED_IDLE_REMAINING_THRESHOLD_SECONDS = 5;
+      const MAX_UNEXPECTED_IDLE_RECOVERY_RETRIES = 2;
+
+      // Stream providers occasionally drop early; try to recover current song instead of skipping.
+      if (remainingSeconds > UNEXPECTED_IDLE_REMAINING_THRESHOLD_SECONDS) {
+        if (this.unexpectedIdleSongUrl === currentSong.url) {
+          this.unexpectedIdleRetries++;
+        } else {
+          this.unexpectedIdleSongUrl = currentSong.url;
+          this.unexpectedIdleRetries = 1;
+        }
+
+        if (this.unexpectedIdleRetries <= MAX_UNEXPECTED_IDLE_RECOVERY_RETRIES) {
+          const resumeAt = Math.max(0, this.getPosition() - 1);
+          debug(`Unexpected idle for "${currentSong.title}" at ${this.getPosition()}s (${remainingSeconds}s remaining). Recovery attempt ${this.unexpectedIdleRetries}/${MAX_UNEXPECTED_IDLE_RECOVERY_RETRIES}.`);
+          await this.seek(resumeAt);
+          return;
+        }
+
+        debug(`Unexpected idle recovery exhausted for "${currentSong.title}"; advancing queue.`);
+      } else {
+        this.unexpectedIdleSongUrl = null;
+        this.unexpectedIdleRetries = 0;
+      }
+    }
+
     // Automatically advance queued song at end
     if (this.loopCurrentSong && newState.status === AudioPlayerStatus.Idle && this.status === STATUS.PLAYING) {
       await this.seek(0);
@@ -755,13 +810,15 @@ export default class {
     }
 
     if (newState.status === AudioPlayerStatus.Idle && this.status === STATUS.PLAYING) {
+      this.unexpectedIdleSongUrl = null;
+      this.unexpectedIdleRetries = 0;
       await this.forward(1);
       // Auto announce the next song if configured to
       const settings = await getGuildSettings(this.guildId);
       const {autoAnnounceNextSong} = settings;
-      if (autoAnnounceNextSong && this.currentChannel) {
+      if (autoAnnounceNextSong && this.currentChannel && this.getCurrent()) {
         await this.currentChannel.send({
-          embeds: this.getCurrent() ? [buildPlayingMessageEmbed(this)] : [],
+          embeds: [buildPlayingMessageEmbed(this)],
         });
       }
     }
@@ -830,6 +887,7 @@ export default class {
     if (this.audioPlayer !== null) {
       this.audioResource = resource;
       this.setAudioPlayerVolume();
+      debug('playAudioPlayerResource: calling audioPlayer.play', {url: this.nowPlaying?.url, volume: this.getVolume()});
       this.audioPlayer.play(this.audioResource);
     }
   }

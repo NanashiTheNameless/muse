@@ -81,7 +81,7 @@ export default class implements Command {
     const query = interaction.options.getString('query')?.trim();
 
     if (!query || query.length === 0) {
-      await interaction.respond([]);
+      await this.respondToAutocomplete(interaction, []);
       return;
     }
 
@@ -89,7 +89,7 @@ export default class implements Command {
       // Don't return suggestions for URLs
       // eslint-disable-next-line no-new
       new URL(query);
-      await interaction.respond([]);
+      await this.respondToAutocomplete(interaction, []);
       return;
     } catch {}
 
@@ -102,6 +102,20 @@ export default class implements Command {
         key: `autocomplete:${query}`,
       });
 
-    await interaction.respond(suggestions);
+    await this.respondToAutocomplete(interaction, suggestions);
+  }
+
+  private async respondToAutocomplete(interaction: AutocompleteInteraction, suggestions: {name: string; value: string | number}[]): Promise<void> {
+    try {
+      await interaction.respond(suggestions);
+    } catch (error: unknown) {
+      const code = (error as {code?: number}).code;
+      // Users can type quickly and invalidate an autocomplete interaction before we answer.
+      if (code === 10062) {
+        return;
+      }
+
+      throw error;
+    }
   }
 }

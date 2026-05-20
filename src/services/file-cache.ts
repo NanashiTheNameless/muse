@@ -66,28 +66,60 @@ export default class FileCacheProvider {
    * @param hash lookup key
    */
   createWriteStream(hash: string) {
-    const tmpPath = path.join(this.config.CACHE_DIR, 'tmp', hash);
+    const tmpPath = path.join(this.config.CACHE_DIR, 'tmp', `${hash}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 10)}`);
     const finalPath = path.join(this.config.CACHE_DIR, hash);
 
     const stream = createWriteStream(tmpPath);
 
-    stream.on('close', async () => {
-      // Only move if size is non-zero (may have errored out)
-      const stats = await fs.stat(tmpPath);
+    stream.on('close', () => {
+      void (async () => {
+        try {
+          // File may already be moved/deleted by a competing writer.
+          const stats = await fs.stat(tmpPath);
 
-      if (stats.size !== 0) {
-        await fs.rename(tmpPath, finalPath);
+          if (stats.size === 0) {
+            await fs.unlink(tmpPath).catch(() => undefined);
+            return;
+          }
 
-        await prisma.fileCache.create({
-          data: {
-            hash,
-            accessedAt: new Date(),
-            bytes: stats.size,
-          },
-        });
-      }
+          try {
+            await fs.rename(tmpPath, finalPath);
+          } catch (error: unknown) {
+            const code = (error as {code?: string}).code;
 
-      await this.evictOldestIfNecessary();
+            // Another writer finished first. Drop our temp file and keep the winner.
+            if (code === 'EEXIST' || code === 'ENOENT') {
+              await fs.unlink(tmpPath).catch(() => undefined);
+            } else {
+              throw error;
+            }
+          }
+
+          await prisma.fileCache.upsert({
+            where: {
+              hash,
+            },
+            update: {
+              accessedAt: new Date(),
+              bytes: stats.size,
+            },
+            create: {
+              hash,
+              accessedAt: new Date(),
+              bytes: stats.size,
+            },
+          });
+        } catch (error: unknown) {
+          const code = (error as {code?: string}).code;
+
+          // Expected race condition: temp file already gone.
+          if (code !== 'ENOENT') {
+            debug(`Cache write finalize failed for ${hash}: ${(error as Error).message}`);
+          }
+        } finally {
+          await this.evictOldestIfNecessary();
+        }
+      })();
     });
 
     return stream;
@@ -130,7 +162,12 @@ export default class FileCacheProvider {
             hash: oldest.hash,
           },
         });
-        await fs.unlink(path.join(this.config.CACHE_DIR, oldest.hash));
+        await fs.unlink(path.join(this.config.CACHE_DIR, oldest.hash)).catch((error: unknown) => {
+          const code = (error as {code?: string}).code;
+          if (code !== 'ENOENT') {
+            throw error;
+          }
+        });
         debug(`${oldest.hash} has been evicted`);
         numOfEvictedFiles++;
       }
