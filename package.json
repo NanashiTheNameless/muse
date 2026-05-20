@@ -12,7 +12,7 @@
   "types": "dts/types",
   "type": "module",
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=24.15.0"
   },
   "files": [
     "src"

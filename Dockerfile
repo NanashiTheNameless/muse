@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:22-slim AS base
+FROM node:24-slim AS base
 
 ARG YT_DLP_CHANNEL=stable
 ARG YT_DLP_VERSION=
