@@ -13,6 +13,7 @@ import Config from './config.js';
 import KeyValueCacheProvider from './key-value-cache.js';
 import {ONE_HOUR_IN_SECONDS} from '../utils/constants.js';
 import debug from '../utils/debug.js';
+import {getSongTitle} from '../utils/song-title.js';
 
 @injectable()
 export default class AddQueryToQueue {
@@ -139,9 +140,9 @@ export default class AddQueryToQueue {
     }
 
     if (newSongs.length === 1) {
-      await interaction.editReply(`Added **${firstSong.title}** to the${addToFrontOfQueue ? ' front of the' : ''} queue${skipCurrentTrack ? ' and skipped the current track' : ''}${extraMsg}.`);
+      await interaction.editReply(`Added **${getSongTitle(firstSong)}** to the${addToFrontOfQueue ? ' front of the' : ''} queue${skipCurrentTrack ? ' and skipped the current track' : ''}${extraMsg}.`);
     } else {
-      await interaction.editReply(`Added **${firstSong.title}** and ${newSongs.length - 1} other songs to the queue${skipCurrentTrack ? ' and skipped the current track' : ''}${extraMsg}.`);
+      await interaction.editReply(`Added **${getSongTitle(firstSong)}** and ${newSongs.length - 1} other songs to the queue${skipCurrentTrack ? ' and skipped the current track' : ''}${extraMsg}.`);
     }
   }
 

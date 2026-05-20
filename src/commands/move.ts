@@ -5,6 +5,7 @@ import PlayerManager from '../managers/player.js';
 import Command from './index.js';
 import {SlashCommandBuilder} from '@discordjs/builders';
 import Config from '../services/config.js';
+import {getSongTitle} from '../utils/song-title.js';
 
 @injectable()
 export default class implements Command {
@@ -68,8 +69,8 @@ export default class implements Command {
       }
     }
 
-    const {title} = player.move(from, to);
+    const song = player.move(from, to);
 
-    await interaction.reply('Moved **' + title + '** to position **' + String(to) + '**.');
+    await interaction.reply(`Moved **${getSongTitle(song)}** to position **${String(to)}**.`);
   }
 }

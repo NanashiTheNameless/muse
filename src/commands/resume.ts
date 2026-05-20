@@ -25,6 +25,9 @@ export default class implements Command {
   public async execute(interaction: ChatInputCommandInteraction): Promise<void> {
     const player = this.playerManager.get(interaction.guild!.id);
     const [targetVoiceChannel] = getMemberVoiceChannel(interaction.member as GuildMember) ?? getMostPopularVoiceChannel(interaction.guild!);
+
+    await interaction.deferReply();
+
     if (player.status === STATUS.PLAYING) {
       throw new Error('Already playing. Give me a song name.');
     }
@@ -37,7 +40,7 @@ export default class implements Command {
     await player.connect(targetVoiceChannel);
     await player.play();
 
-    await interaction.reply({
+    await interaction.editReply({
       content: 'Resumed playback.',
       embeds: [buildPlayingMessageEmbed(player)],
     });

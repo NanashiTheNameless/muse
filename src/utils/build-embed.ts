@@ -1,34 +1,8 @@
-import getYouTubeID from './get-youtube-id.js';
 import {EmbedBuilder} from 'discord.js';
-import Player, {MediaSource, QueuedSong, STATUS} from '../services/player.js';
+import Player, {STATUS} from '../services/player.js';
 import getProgressBar from './get-progress-bar.js';
 import {prettyTime} from './time.js';
-import {truncate} from './string.js';
-
-const getMaxSongTitleLength = (title: string) => {
-  // eslint-disable-next-line no-control-regex
-  const nonASCII = /[^\x00-\x7F]+/;
-  return nonASCII.test(title) ? 28 : 48;
-};
-
-const getSongTitle = ({title, url, offset, source}: QueuedSong, shouldTruncate = false) => {
-  if (source === MediaSource.HLS) {
-    return `[${title}](${url})`;
-  }
-
-  if (source === MediaSource.Arbitrary) {
-    const cleanSongTitle = title.replace(/\[.*\]/, '').trim();
-    const songTitle = shouldTruncate ? truncate(cleanSongTitle, getMaxSongTitleLength(cleanSongTitle)) : cleanSongTitle;
-    return `[${songTitle}](${url})`;
-  }
-
-  const cleanSongTitle = title.replace(/\[.*\]/, '').trim();
-
-  const songTitle = shouldTruncate ? truncate(cleanSongTitle, getMaxSongTitleLength(cleanSongTitle)) : cleanSongTitle;
-  const youtubeId = url.length === 11 ? url : getYouTubeID(url) ?? '';
-
-  return `[${songTitle}](https://www.youtube.com/watch?v=${youtubeId}${offset === 0 ? '' : '&t=' + String(offset)})`;
-};
+import {getSongTitle} from './song-title.js';
 
 const getQueueInfo = (player: Player) => {
   const queueSize = player.queueSize();
