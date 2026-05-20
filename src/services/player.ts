@@ -315,6 +315,11 @@ export default class {
   }
 
   async forward(skip: number): Promise<void> {
+    // Adjust queue position correctly to skip the exact number of songs
+    if (skip < 1) {
+      throw new Error('Invalid number of songs to skip.');
+    }
+
     this.manualForward(skip);
 
     try {
@@ -329,8 +334,7 @@ export default class {
         const {secondsToWaitAfterQueueEmpties} = settings;
         if (secondsToWaitAfterQueueEmpties !== 0) {
           this.disconnectTimer = setTimeout(() => {
-            // Make sure we are not accidentally playing
-            // when disconnecting
+            // Ensure we are not accidentally playing when disconnecting
             if (this.status === STATUS.IDLE) {
               this.disconnect();
             }
@@ -338,7 +342,8 @@ export default class {
         }
       }
     } catch (error: unknown) {
-      this.queuePosition--;
+      // Revert queue position if an error occurs
+      this.queuePosition = Math.max(0, this.queuePosition - skip);
       throw error;
     }
   }

@@ -55,11 +55,27 @@ export default class implements Command {
     if (isInstanceOwner || hasManageGuild || isRequester || isAloneInVC) {
       await interaction.deferReply();
       try {
-        await player.forward(numToSkip);
-        await interaction.editReply({
-          content: 'Skipped.',
-          embeds: player.getCurrent() ? [buildPlayingMessageEmbed(player)] : [],
-        });
+        // Ensure `/skip 1` skips only the current song
+        if (numToSkip === 1) {
+          if (!player.canGoForward(1)) {
+            throw new Error('No song to skip to.');
+          }
+          await player.forward(1);
+          await interaction.editReply({
+            content: 'Skipped the current song.',
+            embeds: player.getCurrent() ? [buildPlayingMessageEmbed(player)] : [],
+          });
+        } else {
+          // Handle skipping multiple songs
+          if (!player.canGoForward(numToSkip)) {
+            throw new Error('Not enough songs in the queue to skip.');
+          }
+          await player.forward(numToSkip);
+          await interaction.editReply({
+            content: `Skipped ${numToSkip} song(s).`,
+            embeds: player.getCurrent() ? [buildPlayingMessageEmbed(player)] : [],
+          });
+        }
       } catch (_: unknown) {
         throw new Error('No song to skip to.');
       }
