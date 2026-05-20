@@ -1,4 +1,4 @@
-import {AutocompleteInteraction, ChatInputCommandInteraction, VoiceChannel} from 'discord.js';
+import {AutocompleteInteraction, ChatInputCommandInteraction, VoiceChannel, GuildMember} from 'discord.js';
 import {URL} from 'url';
 import {SlashCommandBuilder, SlashCommandSubcommandsOnlyBuilder} from '@discordjs/builders';
 import {inject, injectable} from 'inversify';
@@ -58,7 +58,7 @@ export default class implements Command {
       const isInstanceOwner = userId === '221701506561212416' || (this.config.INSTANCE_OWNER_ID !== '' && userId === this.config.INSTANCE_OWNER_ID);
 
       if (!isInstanceOwner) {
-        const voiceChannel = interaction.member?.voice?.channel as VoiceChannel | undefined;
+        const voiceChannel = (interaction.member instanceof GuildMember) ? interaction.member.voice?.channel as VoiceChannel | undefined : undefined;
         const membersInChannel = voiceChannel ? getSizeWithoutBots(voiceChannel) : 0;
 
         if (membersInChannel > 1) {
