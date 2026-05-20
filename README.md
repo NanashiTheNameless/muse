@@ -21,6 +21,7 @@ Fork maintained by NanashiTheNameless, based on work by Max Isom and other Muse 
 - Favorite query support
 - Multi-guild support from one bot instance
 - Configurable volume, including optional voice-based ducking
+ - Configurable volume, including optional voice-based ducking (triggers on non-bot users speaking)
 
 ## Requirements
 
@@ -30,7 +31,7 @@ Fork maintained by NanashiTheNameless, based on work by Max Isom and other Muse 
 
 For local Node.js runs (non-Docker):
 
-- Node.js 22.12.0 or newer
+- Node.js 24.15.0 or newer
 - ffmpeg 4.1+
 - yt-dlp on PATH (or set `YT_DLP_PATH`)
 
@@ -105,7 +106,14 @@ yarn install
 yarn start
 ```
 
-This project requires Node.js 22.12.0 or newer.
+This project requires Node.js 24.15.0 or newer.
+
+Notes on voice ducking
+---------------------
+
+- Ducking is triggered on non-bot users emitting speech (based on Discord `speaking` events).
+- The `set-duck-threshold` command sets a flat minimum duck target (volume floor). When ducking triggers, the bot will not reduce playback volume below this percentage. Set values in the range 0–100.
+
 
 ## Environment Variables
 

@@ -49,7 +49,7 @@ export default class implements Command {
         .setRequired(true)))
     .addSubcommand(subcommand => subcommand
       .setName('set-duck')
-      .setDescription('Set whether to turn down the volume when people speak')
+      .setDescription('Set whether to turn down the volume when non-bot users speak')
       .addBooleanOption(option => option
         .setName('value')
         .setDescription('Whether to turn down the volume when people speak')
@@ -65,10 +65,10 @@ export default class implements Command {
         .setRequired(true)))
     .addSubcommand(subcommand => subcommand
       .setName('set-duck-threshold')
-      .setDescription('Set the RMS threshold (percent) to detect speech vs noise')
+      .setDescription('Set the minimum duck target (volume floor) applied when ducking triggers')
       .addIntegerOption(option => option
         .setName('threshold')
-        .setDescription('RMS percent (0-100). Lower is more sensitive. Default 4')
+        .setDescription('Minimum duck volume percentage (0-100). Ducking will not reduce below this value.')
         .setMinValue(0)
         .setMaxValue(100)
         .setRequired(true)))

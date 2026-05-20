@@ -391,103 +391,32 @@ export default class Player implements PlayerPublic {
     if (!volumeDucking || !this.voiceConnection) {
       return;
     }
-    const audioThreshold = (guildSettings as any).volumeDuckingThreshold ?? 4; // percent RMS
+
+    const minDuckFloor = (guildSettings as any).volumeDuckingThreshold ?? 0; // flat percentage floor
 
     this.voiceConnection.receiver.speaking.on('start', (userId: string) => {
       if (!this.currentChannel) return;
 
-      // If a restore timer was pending for this user, cancel it (they resumed)
+      // Cancel any pending end timeout (they resumed)
       const pendingEnd = this.speakingEndTimeouts.get(userId);
       if (pendingEnd) {
         clearTimeout(pendingEnd);
         this.speakingEndTimeouts.delete(userId);
       }
 
-      // If we're already sampling this user, ignore duplicate start
-      if (this.speakingSampleInProgress.has(userId)) return;
-
       const member = this.currentChannel.members.get(userId);
       const channelId = this.currentChannel.id;
 
-      const markAsSpeaking = () => {
-        if (!member) return;
-        // cancel pending end just in case
-        const p = this.speakingEndTimeouts.get(userId);
-        if (p) { clearTimeout(p); this.speakingEndTimeouts.delete(userId); }
-        if (!this.channelToSpeakingUsers.has(channelId)) this.channelToSpeakingUsers.set(channelId, new Set());
-        this.channelToSpeakingUsers.get(channelId)?.add(member.id);
-        this.suppressVoiceWhenPeopleAreSpeaking(volumeDuckingTarget);
-      };
+      // Only consider real (non-bot) users for ducking
+      if (!member || member.user?.bot) return;
 
-      // If threshold is 0 or negative, treat any start as speech
-      if (audioThreshold <= 0) {
-        markAsSpeaking();
-        return;
-      }
-
-      // Try to sample a short PCM snippet to estimate audio RMS if receiver supports it.
-      try {
-        const receiverAny: any = (this.voiceConnection as any).receiver;
-        const createStreamFn = receiverAny?.createStream ?? receiverAny?.subscribe;
-
-        if (typeof createStreamFn === 'function') {
-          this.speakingSampleInProgress.add(userId);
-          const SAMPLE_MS = 200;
-          const pcmStream = receiverAny.createStream
-            ? receiverAny.createStream(userId, { mode: 'pcm' })
-            : receiverAny.subscribe(userId, { mode: 'pcm' });
-
-          let totalSquares = 0;
-          let sampleCount = 0;
-
-          const onData = (chunk: Buffer) => {
-            // Interpret buffer as signed 16-bit LE PCM
-            for (let i = 0; i + 1 < chunk.length; i += 2) {
-              const sample = chunk.readInt16LE(i);
-              totalSquares += sample * sample;
-              sampleCount++;
-            }
-          };
-
-          pcmStream.on('data', onData);
-
-          const timeout = setTimeout(() => {
-            try {
-              pcmStream.off('data', onData);
-              try { pcmStream.destroy?.(); } catch {}
-            } catch {}
-
-            this.speakingSampleInProgress.delete(userId);
-
-            const meanSquare = sampleCount === 0 ? 0 : (totalSquares / sampleCount);
-            const rms = Math.sqrt(meanSquare);
-            const rmsPercent = Math.min(100, Math.round((rms / 32768) * 100));
-
-            const prev = this.speakingEma.get(userId) ?? 0;
-            const alpha = 0.3;
-            const ema = Math.round((alpha * rmsPercent + (1 - alpha) * prev) * 100) / 100;
-            this.speakingEma.set(userId, ema);
-
-            if (ema >= audioThreshold) {
-              markAsSpeaking();
-            }
-          }, SAMPLE_MS);
-
-          return;
-        }
-      } catch (e) {
-        // fall through
-      }
-
-      // If PCM sampling isn't available, optimistically count start as speech
-      markAsSpeaking();
+      if (!this.channelToSpeakingUsers.has(channelId)) this.channelToSpeakingUsers.set(channelId, new Set());
+      this.channelToSpeakingUsers.get(channelId)?.add(member.id);
+      this.suppressVoiceWhenPeopleAreSpeaking(volumeDuckingTarget, minDuckFloor);
     });
 
     this.voiceConnection.receiver.speaking.on('end', (userId: string) => {
       if (!this.currentChannel) return;
-
-      // Cancel any sample-in-progress for this user
-      if (this.speakingSampleInProgress.has(userId)) this.speakingSampleInProgress.delete(userId);
 
       const channelId = this.currentChannel.id;
       const member = this.currentChannel.members.get(userId);
@@ -500,9 +429,10 @@ export default class Player implements PlayerPublic {
         this.speakingEndTimeouts.delete(userId);
         if (!this.currentChannel) return;
         const member2 = this.currentChannel.members.get(userId);
-        if (member2 && this.channelToSpeakingUsers.has(channelId)) {
+        // Only remove if member exists and is not a bot (consistency with start)
+        if (member2 && !member2.user?.bot && this.channelToSpeakingUsers.has(channelId)) {
           this.channelToSpeakingUsers.get(channelId)?.delete(member2.id);
-          this.suppressVoiceWhenPeopleAreSpeaking(volumeDuckingTarget);
+          this.suppressVoiceWhenPeopleAreSpeaking(volumeDuckingTarget, minDuckFloor);
         }
       }, 500);
 
@@ -510,7 +440,7 @@ export default class Player implements PlayerPublic {
     });
   }
 
-  suppressVoiceWhenPeopleAreSpeaking(volumeDuckingTarget: number): void {
+  suppressVoiceWhenPeopleAreSpeaking(volumeDuckingTarget: number, minDuckFloor = 0): void {
     if (!this.currentChannel) {
       return;
     }
@@ -520,16 +450,22 @@ export default class Player implements PlayerPublic {
     const isSpeaking = speakingUsers && speakingUsers.size > 0;
     
     if (isSpeaking) {
+      // Compute effective target volume (0-100), honoring flat floor
+      const requested = Math.round(volumeDuckingTarget);
+      const effectiveTarget = Math.max(0, Math.min(100, Math.max(minDuckFloor, requested)));
+
+      debug('ducking: applying', {currentVol, requestedTarget: volumeDuckingTarget, effectiveTarget});
+
       // Only duck if target is lower than current volume
-      if (volumeDuckingTarget < currentVol) {
+      if (effectiveTarget < currentVol) {
         if (this.preDuckingVolume === null) {
           this.preDuckingVolume = currentVol;
         }
         // Track current duck target and mark ducking state
-        this.duckTargetVolume = volumeDuckingTarget;
+        this.duckTargetVolume = effectiveTarget;
         this.ducking = true;
         // Ramp down quickly for responsiveness
-        void this.rampVolumeTo(volumeDuckingTarget, 180);
+        void this.rampVolumeTo(effectiveTarget, 180);
       }
     } else if (this.preDuckingVolume !== null) {
       // Restore to volume before ducking started with a smooth ramp
@@ -701,13 +637,17 @@ export default class Player implements PlayerPublic {
         currentStep++;
         const progress = Math.min(1, currentStep / steps);
         const next = Math.round((start + (clampedTarget - start) * progress) * 100) / 100;
-        this.setVolume(next);
+        // Ensure numeric and clamped
+        const safeNext = Number.isFinite(next) ? Math.max(0, Math.min(100, next)) : clampedTarget;
+        this.setVolume(safeNext);
 
         if (progress >= 1) {
           if (this.duckInterval) {
             clearInterval(this.duckInterval);
             this.duckInterval = null;
           }
+          // Log final volume and audio resource state for debugging ducking mute issues
+          debug('rampVolumeTo: finished', {start, clampedTarget, final: safeNext, audioResourceVolume: this.audioResource?.volume?.volume});
           resolve();
         }
       }, stepMs);
