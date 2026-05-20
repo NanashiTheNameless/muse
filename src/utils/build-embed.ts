@@ -21,12 +21,12 @@ const getPlayerUI = (player: Player) => {
   }
 
   const position = player.getPosition();
-  const button = player.status === STATUS.PLAYING ? '[stop]' : '[play]';
+  const indicator = player.status === STATUS.PLAYING ? '[playing]' : '[paused]';
   const progressBar = getProgressBar(10, position / song.length);
   const elapsedTime = song.isLive ? 'live' : `${prettyTime(position)}/${prettyTime(song.length)}`;
   const loop = player.loopCurrentSong ? '[loop-song]' : player.loopCurrentQueue ? '[loop-queue]' : '';
   const vol: string = typeof player.getVolume() === 'number' ? `${player.getVolume()!}%` : '';
-  return `${button} ${progressBar} \`[${elapsedTime}]\` vol ${vol} ${loop}`;
+  return `${indicator} ${progressBar} \`[${elapsedTime}]\` vol ${vol} ${loop}`;
 };
 
 export const buildPlayingMessageEmbed = (player: Player): EmbedBuilder => {
