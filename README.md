@@ -36,6 +36,9 @@ For local Node.js runs (non-Docker):
 
 ## Adding the Bot to a Server
 
+For testing you acan use my hosted instance however I ask that you self-host long term...
+<https://discord.com/oauth2/authorize?client_id=1506123145571078185>
+
 The bot requires the following OAuth2 scopes and permissions:
 
 **Scopes:** `bot`, `applications.commands`
@@ -170,7 +173,6 @@ The cookies file must be writable because yt-dlp may refresh cookies.
 
 Current GitHub Actions workflows:
 
-- `lint.yml` runs lint checks on push and pull request
 - `type-check.yml` runs TypeScript checks on push and pull request
 - `image-publish-latest.yml` builds and publishes `ghcr.io/<owner>/<repo>:latest` from `master`
 
