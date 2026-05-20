@@ -26,14 +26,14 @@ model KeyValueCache {
 model Setting {
   guildId                             String   @id
   playlistLimit                       Int      @default(50)
-  secondsToWaitAfterQueueEmpties      Int      @default(30)
+  secondsToWaitAfterQueueEmpties      Int      @default(120)
   leaveIfNoListeners                  Boolean  @default(true)
   queueAddResponseEphemeral           Boolean  @default(false)
-  autoAnnounceNextSong                Boolean  @default(false)
-  defaultVolume                       Int      @default(50)
+  autoAnnounceNextSong                Boolean  @default(true)
+  defaultVolume                       Int      @default(25)
   defaultQueuePageSize                Int      @default(10)
-  turnDownVolumeWhenPeopleSpeak       Boolean  @default(false)
-  turnDownVolumeWhenPeopleSpeakTarget Int      @default(20)
+  turnDownVolumeWhenPeopleSpeak       Boolean  @default(true)
+  turnDownVolumeWhenPeopleSpeakTarget Int      @default(5)
   createdAt                           DateTime @default(now())
   updatedAt                           DateTime @updatedAt
 }

@@ -23,7 +23,6 @@ import debug from '../utils/debug.js';
 import {getGuildSettings} from '../utils/get-guild-settings.js';
 import {buildPlayingMessageEmbed} from '../utils/build-embed.js';
 import {getYouTubeMediaSource} from '../utils/yt-dlp.js';
-import {Setting} from '@prisma/client';
 
 export enum MediaSource {
   Youtube,
@@ -348,7 +347,7 @@ export default class {
     }
   }
 
-  registerVoiceActivityListener(guildSettings: Setting) {
+  registerVoiceActivityListener(guildSettings: Awaited<ReturnType<typeof getGuildSettings>>) {
     const {turnDownVolumeWhenPeopleSpeak, turnDownVolumeWhenPeopleSpeakTarget} = guildSettings;
     if (!turnDownVolumeWhenPeopleSpeak || !this.voiceConnection) {
       return;
@@ -671,8 +670,17 @@ export default class {
       return;
     }
 
-    if (this.audioPlayer.listeners('stateChange').length === 0) {
-      this.audioPlayer.on(AudioPlayerStatus.Idle, this.onAudioPlayerIdle.bind(this));
+    const player = this.audioPlayer;
+
+    if (player.listeners(AudioPlayerStatus.Idle).length === 0) {
+      player.on(AudioPlayerStatus.Idle, async (oldState, newState) => {
+        // Ignore idle events from players that are no longer active.
+        if (this.audioPlayer !== player) {
+          return;
+        }
+
+        await this.onAudioPlayerIdle(oldState, newState);
+      });
     }
   }
 

@@ -5,10 +5,9 @@ import {TYPES} from '../types.js';
 import Config from '../services/config.js';
 import {prisma} from '../utils/db.js';
 import {REST} from '@discordjs/rest';
-import {Setting} from '@prisma/client';
 import registerCommandsOnGuild from '../utils/register-commands-on-guild.js';
 
-export async function createGuildSettings(guildId: string): Promise<Setting> {
+export async function createGuildSettings(guildId: string): Promise<Awaited<ReturnType<typeof prisma.setting.upsert>>> {
   return prisma.setting.upsert({
     where: {
       guildId,
