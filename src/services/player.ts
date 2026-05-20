@@ -535,6 +535,17 @@ export default class {
     return hasha(url, {algorithm: 'md5'});
   }
 
+  private getArbitraryUrlHeaders(url: string): Record<string, string> {
+    const headers: Record<string, string> = {};
+    
+    // Archive.org requires a User-Agent header
+    if (url.includes('archive.org')) {
+      headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
+    }
+    
+    return headers;
+  }
+
   private async getStream(song: QueuedSong, options: {seek?: number; to?: number} = {}): Promise<Readable> {
     if (this.status === STATUS.PLAYING) {
       this.audioPlayer?.stop();
@@ -552,6 +563,12 @@ export default class {
         '-reconnect_streamed', '1',
         '-reconnect_delay_max', '5',
       ];
+      
+      // Add headers for archive.org and other servers that require them
+      const headers = this.getArbitraryUrlHeaders(song.url);
+      const headerOptions = this.buildFfmpegHeaderOptions(headers);
+      ffmpegInputOptions.push(...headerOptions);
+      
       if (options.seek) {
         ffmpegInputOptions.push('-ss', options.seek.toString());
       }
