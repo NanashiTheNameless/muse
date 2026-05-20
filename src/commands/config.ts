@@ -65,10 +65,10 @@ export default class implements Command {
         .setRequired(true)))
     .addSubcommand(subcommand => subcommand
       .setName('set-duck-threshold')
-      .setDescription('Set the minimum duck target (volume floor) applied when ducking triggers')
+      .setDescription('Set the detection threshold (percent) to detect user speech using MAV')
       .addIntegerOption(option => option
         .setName('threshold')
-        .setDescription('Minimum duck volume percentage (0-100). Ducking will not reduce below this value.')
+        .setDescription('Mean Absolute Value percent (0-100). Lower is more sensitive. Default 10')
         .setMinValue(0)
         .setMaxValue(100)
         .setRequired(true)))
@@ -304,7 +304,7 @@ export default class implements Command {
           'Default Volume': config.defaultVolume,
           'Default queue page size': config.defaultQueuePageSize,
           'Reduce volume when people speak': config.volumeDucking ? 'Yes' : 'No',
-          'Reduce volume detection threshold': (config as any).volumeDuckingThreshold ?? 4,
+          'Reduce volume detection threshold': (config as any).volumeDuckingThreshold ?? 10,
         };
 
         let description = '';

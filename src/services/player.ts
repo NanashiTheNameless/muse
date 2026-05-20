@@ -392,31 +392,106 @@ export default class Player implements PlayerPublic {
       return;
     }
 
-    const minDuckFloor = (guildSettings as any).volumeDuckingThreshold ?? 0; // flat percentage floor
+    const audioThreshold = (guildSettings as any).volumeDuckingThreshold ?? 10; // percent MAV
 
     this.voiceConnection.receiver.speaking.on('start', (userId: string) => {
       if (!this.currentChannel) return;
 
-      // Cancel any pending end timeout (they resumed)
+      // If a restore timer was pending for this user, cancel it (they resumed)
       const pendingEnd = this.speakingEndTimeouts.get(userId);
       if (pendingEnd) {
         clearTimeout(pendingEnd);
         this.speakingEndTimeouts.delete(userId);
       }
 
+      // If we're already sampling this user, ignore duplicate start
+      if (this.speakingSampleInProgress.has(userId)) return;
+
       const member = this.currentChannel.members.get(userId);
       const channelId = this.currentChannel.id;
+
+      const markAsSpeaking = () => {
+        if (!member) return;
+        // cancel pending end just in case
+        const p = this.speakingEndTimeouts.get(userId);
+        if (p) { clearTimeout(p); this.speakingEndTimeouts.delete(userId); }
+        if (!this.channelToSpeakingUsers.has(channelId)) this.channelToSpeakingUsers.set(channelId, new Set());
+        this.channelToSpeakingUsers.get(channelId)?.add(member.id);
+        this.suppressVoiceWhenPeopleAreSpeaking(volumeDuckingTarget);
+      };
 
       // Only consider real (non-bot) users for ducking
       if (!member || member.user?.bot) return;
 
-      if (!this.channelToSpeakingUsers.has(channelId)) this.channelToSpeakingUsers.set(channelId, new Set());
-      this.channelToSpeakingUsers.get(channelId)?.add(member.id);
-      this.suppressVoiceWhenPeopleAreSpeaking(volumeDuckingTarget, minDuckFloor);
+      // If threshold is 0 or negative, treat any start as speech
+      if (audioThreshold <= 0) {
+        markAsSpeaking();
+        return;
+      }
+
+      // Try to sample a short PCM snippet to estimate audio MAV if receiver supports it.
+      try {
+        const receiverAny: any = (this.voiceConnection as any).receiver;
+        const createStreamFn = receiverAny?.createStream ?? receiverAny?.subscribe;
+
+        if (typeof createStreamFn === 'function') {
+          this.speakingSampleInProgress.add(userId);
+          const SAMPLE_MS = 200;
+          const pcmStream = receiverAny.createStream
+            ? receiverAny.createStream(userId, { mode: 'pcm' })
+            : receiverAny.subscribe(userId, { mode: 'pcm' });
+
+
+          let totalAbs = 0;
+          let sampleCount = 0;
+
+          const onData = (chunk: Buffer) => {
+            // Interpret buffer as signed 16-bit LE PCM and accumulate absolute values (MAV)
+            for (let i = 0; i + 1 < chunk.length; i += 2) {
+              const sample = chunk.readInt16LE(i);
+              totalAbs += Math.abs(sample);
+              sampleCount++;
+            }
+          };
+
+          pcmStream.on('data', onData);
+
+          const timeout = setTimeout(() => {
+            try {
+              pcmStream.off('data', onData);
+              try { pcmStream.destroy?.(); } catch {}
+            } catch {}
+
+            this.speakingSampleInProgress.delete(userId);
+
+            const avgAbs = sampleCount === 0 ? 0 : (totalAbs / sampleCount);
+            const absPercent = Math.min(100, Math.round((avgAbs / 32768) * 100));
+
+            const prev = this.speakingEma.get(userId) ?? 0;
+            const alpha = 0.3;
+            const ema = Math.round((alpha * absPercent + (1 - alpha) * prev) * 100) / 100;
+            this.speakingEma.set(userId, ema);
+
+            if (ema >= audioThreshold) {
+              markAsSpeaking();
+            }
+          }, SAMPLE_MS);
+
+          return;
+        }
+      } catch (e) {
+        // fall through
+      }
+
+      // If PCM sampling isn't available, optimistically count start as speech
+      markAsSpeaking();
     });
 
     this.voiceConnection.receiver.speaking.on('end', (userId: string) => {
       if (!this.currentChannel) return;
+
+      // Cancel any sample-in-progress for this user
+      if (this.speakingSampleInProgress.has(userId)) this.speakingSampleInProgress.delete(userId);
 
       const channelId = this.currentChannel.id;
       const member = this.currentChannel.members.get(userId);
@@ -429,10 +504,9 @@ export default class Player implements PlayerPublic {
         this.speakingEndTimeouts.delete(userId);
         if (!this.currentChannel) return;
         const member2 = this.currentChannel.members.get(userId);
-        // Only remove if member exists and is not a bot (consistency with start)
-        if (member2 && !member2.user?.bot && this.channelToSpeakingUsers.has(channelId)) {
+        if (member2 && this.channelToSpeakingUsers.has(channelId)) {
           this.channelToSpeakingUsers.get(channelId)?.delete(member2.id);
-          this.suppressVoiceWhenPeopleAreSpeaking(volumeDuckingTarget, minDuckFloor);
+          this.suppressVoiceWhenPeopleAreSpeaking(volumeDuckingTarget);
         }
       }, 500);
 
@@ -440,7 +514,7 @@ export default class Player implements PlayerPublic {
     });
   }
 
-  suppressVoiceWhenPeopleAreSpeaking(volumeDuckingTarget: number, minDuckFloor = 0): void {
+  suppressVoiceWhenPeopleAreSpeaking(volumeDuckingTarget: number): void {
     if (!this.currentChannel) {
       return;
     }
@@ -450,9 +524,9 @@ export default class Player implements PlayerPublic {
     const isSpeaking = speakingUsers && speakingUsers.size > 0;
     
     if (isSpeaking) {
-      // Compute effective target volume (0-100), honoring flat floor
+      // Compute effective target volume (0-100)
       const requested = Math.round(volumeDuckingTarget);
-      const effectiveTarget = Math.max(0, Math.min(100, Math.max(minDuckFloor, requested)));
+      const effectiveTarget = Math.max(0, Math.min(100, requested));
 
       debug('ducking: applying', {currentVol, requestedTarget: volumeDuckingTarget, effectiveTarget});
 

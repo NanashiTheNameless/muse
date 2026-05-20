@@ -112,7 +112,7 @@ Notes on voice ducking
 ---------------------
 
 - Ducking is triggered on non-bot users emitting speech (based on Discord `speaking` events).
-- The `set-duck-threshold` command sets a flat minimum duck target (volume floor). When ducking triggers, the bot will not reduce playback volume below this percentage. Set values in the range 0–100.
+ - The `set-duck-threshold` command sets the detection threshold (percent) based on Mean Absolute Value (MAV). Ducking will only trigger if a user's short PCM MAV exceeds this percentage. Lower values make ducking more sensitive. Default: 10%.
 
 
 ## Environment Variables
