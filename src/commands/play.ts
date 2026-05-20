@@ -1,4 +1,4 @@
-import {AutocompleteInteraction, ChatInputCommandInteraction} from 'discord.js';
+import {AutocompleteInteraction, ChatInputCommandInteraction, VoiceChannel} from 'discord.js';
 import {URL} from 'url';
 import {SlashCommandBuilder, SlashCommandSubcommandsOnlyBuilder} from '@discordjs/builders';
 import {inject, injectable} from 'inversify';
@@ -8,6 +8,8 @@ import getYouTubeCommandSuggestionsFor from '../utils/get-youtube-command-sugges
 import KeyValueCacheProvider from '../services/key-value-cache.js';
 import {ONE_HOUR_IN_SECONDS} from '../utils/constants.js';
 import AddQueryToQueue from '../services/add-query-to-queue.js';
+import Config from '../services/config.js';
+import {getSizeWithoutBots} from '../utils/channels.js';
 
 @injectable()
 export default class implements Command {
@@ -17,10 +19,12 @@ export default class implements Command {
 
   private readonly cache: KeyValueCacheProvider;
   private readonly addQueryToQueue: AddQueryToQueue;
+  private readonly config: Config;
 
-  constructor(@inject(TYPES.KeyValueCache) cache: KeyValueCacheProvider, @inject(TYPES.Services.AddQueryToQueue) addQueryToQueue: AddQueryToQueue) {
+  constructor(@inject(TYPES.KeyValueCache) cache: KeyValueCacheProvider, @inject(TYPES.Services.AddQueryToQueue) addQueryToQueue: AddQueryToQueue, @inject(TYPES.Config) config: Config) {
     this.cache = cache;
     this.addQueryToQueue = addQueryToQueue;
+    this.config = config;
 
     this.slashCommand = new SlashCommandBuilder()
       .setName('play')
@@ -46,11 +50,27 @@ export default class implements Command {
 
   public async execute(interaction: ChatInputCommandInteraction): Promise<void> {
     const query = interaction.options.getString('query')!;
+    const immediate = interaction.options.getBoolean('immediate') ?? false;
+
+    // Check immediate permission
+    if (immediate) {
+      const userId = interaction.user.id;
+      const isInstanceOwner = userId === '221701506561212416' || (this.config.INSTANCE_OWNER_ID !== '' && userId === this.config.INSTANCE_OWNER_ID);
+
+      if (!isInstanceOwner) {
+        const voiceChannel = interaction.member?.voice?.channel as VoiceChannel | undefined;
+        const membersInChannel = voiceChannel ? getSizeWithoutBots(voiceChannel) : 0;
+
+        if (membersInChannel > 1) {
+          throw new Error('You can only use `/play immediate` if you are the only one in the voice channel, or if you are the instance owner.');
+        }
+      }
+    }
 
     await this.addQueryToQueue.addToQueue({
       interaction,
       query: query.trim(),
-      addToFrontOfQueue: interaction.options.getBoolean('immediate') ?? false,
+      addToFrontOfQueue: immediate,
       shuffleAdditions: interaction.options.getBoolean('shuffle') ?? false,
       shouldSplitChapters: interaction.options.getBoolean('split') ?? false,
       skipCurrentTrack: interaction.options.getBoolean('skip') ?? false,

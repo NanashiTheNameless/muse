@@ -5,6 +5,7 @@ import ffmpeg from 'fluent-ffmpeg';
 import YoutubeAPI from './youtube-api.js';
 import {URL} from 'node:url';
 import getYouTubeID from '../utils/get-youtube-id.js';
+import {cleanUrl} from '../utils/url.js';
 
 @injectable()
 export default class {
@@ -44,10 +45,11 @@ export default class {
     ];
 
     if (YOUTUBE_HOSTS.includes(url.host)) {
-      const videoId = getYouTubeID(url.href);
+      const cleanedUrl = cleanUrl(url.href);
+      const videoId = getYouTubeID(cleanedUrl);
 
       if (videoId) {
-        const songs = await this.youtubeVideo(url.href, shouldSplitChapters);
+        const songs = await this.youtubeVideo(cleanedUrl, shouldSplitChapters);
 
         if (songs) {
           newSongs.push(...songs);
