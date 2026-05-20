@@ -27,8 +27,8 @@ CREATE TABLE "Setting" (
     "defaultVolume" INTEGER NOT NULL DEFAULT 25,
     "defaultQueuePageSize" INTEGER NOT NULL DEFAULT 10,
     "volumeDucking" BOOLEAN NOT NULL DEFAULT true,
-    "volumeDuckingTarget" INTEGER NOT NULL DEFAULT 5,
-    "volumeDuckingThreshold" INTEGER NOT NULL DEFAULT 4,
+    "volumeDuckingTarget" INTEGER NOT NULL DEFAULT 10,
+    "volumeDuckingThreshold" INTEGER NOT NULL DEFAULT 5,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL
 );
