@@ -124,7 +124,8 @@ export default class {
         const duration = typeof data.format?.duration === 'number' ? Math.ceil(data.format.duration) : 0;
         const isLive = duration === 0;
         const tags = (data.format?.tags ?? {}) as Record<string, string>;
-        const title = tags.title || titleFromUrl();
+        const filenameTitle = titleFromUrl();
+        const title = filenameTitle || tags.title;
         const artist = tags.artist ?? tags.album_artist ?? new URL(url).hostname;
 
         resolve({
