@@ -109,5 +109,6 @@ dist
 # TernJS port file
 .tern-port
 
-# Cookies file
+# Cookies file(s)
 cookies.txt
+cookies.txt.*
