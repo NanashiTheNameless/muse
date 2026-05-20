@@ -304,7 +304,7 @@ export default class implements Command {
           'Default Volume': config.defaultVolume,
           'Default queue page size': config.defaultQueuePageSize,
           'Reduce volume when people speak': config.volumeDucking ? 'Yes' : 'No',
-          'Reduce volume detection threshold (RMS%)': (config as any).volumeDuckingThreshold ?? 4,
+          'Reduce volume detection threshold': (config as any).volumeDuckingThreshold ?? 4,
         };
 
         let description = '';
