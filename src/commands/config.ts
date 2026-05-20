@@ -105,6 +105,10 @@ export default class implements Command {
     // Ensure guild settings exist before trying to update
     await getGuildSettings(interaction.guild!.id);
 
+    // Defer the interaction to allow longer processing without timing out.
+    // We'll use `editReply` to send the final response.
+    await interaction.deferReply({ephemeral: true});
+
     switch (interaction.options.getSubcommand()) {
       case 'set-playlist-limit': {
         const limit: number = interaction.options.getInteger('limit')!;
@@ -122,7 +126,7 @@ export default class implements Command {
           },
         });
 
-        await interaction.reply('Limit updated.');
+        await interaction.editReply('Limit updated.');
 
         break;
       }
@@ -139,7 +143,7 @@ export default class implements Command {
           },
         });
 
-        await interaction.reply('Wait delay updated.');
+        await interaction.editReply('Wait delay updated.');
 
         break;
       }
@@ -156,7 +160,7 @@ export default class implements Command {
           },
         });
 
-        await interaction.reply('Leave setting updated.');
+        await interaction.editReply('Leave setting updated.');
 
         break;
       }
@@ -173,7 +177,7 @@ export default class implements Command {
           },
         });
 
-        await interaction.reply('Queue add notification setting updated.');
+        await interaction.editReply('Queue add notification setting updated.');
 
         break;
       }
@@ -190,7 +194,7 @@ export default class implements Command {
           },
         });
 
-        await interaction.reply('Auto announce setting updated.');
+        await interaction.editReply('Auto announce setting updated.');
 
         break;
       }
@@ -207,7 +211,7 @@ export default class implements Command {
           },
         });
 
-        await interaction.reply('Volume setting updated.');
+        await interaction.editReply('Volume setting updated.');
 
         break;
       }
@@ -224,7 +228,7 @@ export default class implements Command {
           },
         });
 
-        await interaction.reply('Default queue page size updated.');
+        await interaction.editReply('Default queue page size updated.');
 
         break;
       }
@@ -241,7 +245,7 @@ export default class implements Command {
           },
         });
 
-        await interaction.reply('Turn down volume setting updated.');
+        await interaction.editReply('Turn down volume setting updated.');
 
         break;
       }
@@ -258,7 +262,7 @@ export default class implements Command {
           },
         });
 
-        await interaction.reply('Turn down volume target setting updated.');
+        await interaction.editReply('Turn down volume target setting updated.');
 
         break;
       }
@@ -289,7 +293,7 @@ export default class implements Command {
 
         embed.setDescription(description);
 
-        await interaction.reply({embeds: [embed]});
+        await interaction.editReply({embeds: [embed]});
 
         break;
       }
