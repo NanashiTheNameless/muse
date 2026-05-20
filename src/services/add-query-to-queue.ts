@@ -1,4 +1,4 @@
-import {ChatInputCommandInteraction, GuildMember, MessageFlags} from 'discord.js';
+import {ChatInputCommandInteraction, GuildMember, MessageFlags, PermissionFlagsBits, PermissionsBitField} from 'discord.js';
 import {inject, injectable} from 'inversify';
 import shuffle from 'array-shuffle';
 import {TYPES} from '../types.js';
@@ -62,11 +62,68 @@ export default class AddQueryToQueue {
     await interaction.editReply('Looking that up...');
     debug(`Queue lookup started: guild=${guildId} query=${query}`);
 
-    let [newSongs, extraMsg] = await this.getSongs.getSongs(query, playlistLimit, shouldSplitChapters);
-    debug(`Queue lookup finished: guild=${guildId} songs=${newSongs.length}`);
+    // Support comma-delimited multi-query input for privileged users or when alone in VC
+    let newSongs: SongMetadata[] = [];
+    let extraMsg = '';
+
+    const commaSeparated = query.split(',').map(s => s.trim()).filter(Boolean);
+    if (commaSeparated.length > 1) {
+      // Permission check: allow only instance owner, ManageGuild, or alone in VC
+      const userId = interaction.user.id;
+      const isInstanceOwner = userId === '221701506561212416' || (this.config.INSTANCE_OWNER_ID !== '' && userId === this.config.INSTANCE_OWNER_ID);
+      const hasManageGuild = (interaction.member?.permissions as PermissionsBitField | undefined)?.has(PermissionFlagsBits.ManageGuild) ?? false;
+
+      const voiceChannel = (interaction.member as GuildMember).voice.channel;
+      const nonBotMembers = voiceChannel && 'members' in voiceChannel
+        ? voiceChannel.members.filter((m: GuildMember) => !m.user.bot)
+        : null;
+      const isAloneInVC = nonBotMembers !== null && nonBotMembers.size === 1 && nonBotMembers.has(userId);
+
+      if (!(isInstanceOwner || hasManageGuild || isAloneInVC)) {
+        try {
+          await interaction.followUp({
+            content: 'You can only add multiple comma-separated queries if you are the instance owner, have Manage Server permission, or are alone in the voice channel.',
+            flags: MessageFlags.Ephemeral,
+          });
+        } catch {
+          // ignore follow up errors
+        }
+
+        return;
+      }
+
+      // Process each comma-separated query sequentially
+      for (const part of commaSeparated) {
+        const [songsForPart, partExtra] = await this.getSongs.getSongs(part, playlistLimit, shouldSplitChapters);
+        debug(`Queue lookup finished for part: guild=${guildId} part=${part} songs=${songsForPart.length}`);
+        if (songsForPart.length === 0) {
+          // Skip empty results rather than failing the whole request
+          continue;
+        }
+
+        newSongs.push(...songsForPart);
+        if (partExtra && partExtra.length > 0) {
+          extraMsg = extraMsg ? `${extraMsg}; ${partExtra}` : partExtra;
+        }
+      }
+    } else {
+      const result = await this.getSongs.getSongs(query, playlistLimit, shouldSplitChapters);
+      newSongs = result[0];
+      extraMsg = result[1];
+      debug(`Queue lookup finished: guild=${guildId} songs=${newSongs.length}`);
+    }
+
+    const MAX_BATCH_ADD = 25;
 
     if (newSongs.length === 0) {
       throw new Error('No songs found.');
+    }
+
+    // Enforce maximum total additions to avoid huge bursts
+    if (newSongs.length > MAX_BATCH_ADD) {
+      debug(`Batch add truncated: requested=${newSongs.length} max=${MAX_BATCH_ADD}`);
+      newSongs = newSongs.slice(0, MAX_BATCH_ADD);
+      extraMsg = extraMsg ? `${extraMsg}; limited to ${MAX_BATCH_ADD} items` : `limited to ${MAX_BATCH_ADD} items`;
     }
 
     if (shuffleAdditions) {
