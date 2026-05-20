@@ -62,7 +62,7 @@ export interface PlayerEvents {
   statusChange: (oldStatus: STATUS, newStatus: STATUS) => void;
 }
 
-export const DEFAULT_VOLUME = 100;
+export const DEFAULT_VOLUME = 50;
 
 export default class {
   public voiceConnection: VoiceConnection | null = null;
@@ -88,6 +88,7 @@ export default class {
 
   private readonly channelToSpeakingUsers: Map<string, Set<string>> = new Map();
   private hasRegisteredVoiceActivityListener = false;
+  private preDuckingVolume: number | null = null;
 
   constructor(fileCache: FileCacheProvider, guildId: string) {
     this.fileCache = fileCache;
@@ -392,10 +393,21 @@ export default class {
     }
 
     const speakingUsers = this.channelToSpeakingUsers.get(this.currentChannel.id);
-    if (speakingUsers && speakingUsers.size > 0) {
-      this.setVolume(turnDownVolumeWhenPeopleSpeakTarget);
-    } else {
-      this.setVolume(this.defaultVolume);
+    const currentVol = this.volume || this.defaultVolume;
+    const isSpeaking = speakingUsers && speakingUsers.size > 0;
+    
+    if (isSpeaking) {
+      // Only duck if target is lower than current volume
+      if (turnDownVolumeWhenPeopleSpeakTarget < currentVol) {
+        if (this.preDuckingVolume === null) {
+          this.preDuckingVolume = currentVol;
+        }
+        this.setVolume(turnDownVolumeWhenPeopleSpeakTarget);
+      }
+    } else if (this.preDuckingVolume !== null) {
+      // Restore to volume before ducking started
+      this.setVolume(this.preDuckingVolume);
+      this.preDuckingVolume = null;
     }
   }
 
