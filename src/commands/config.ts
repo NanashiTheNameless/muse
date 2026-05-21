@@ -41,8 +41,6 @@ export default class implements Command {
         .setDescription('Whether to leave when everyone else leaves')
         .setRequired(true)))
     .addSubcommand(subcommand => subcommand
-      
-    .addSubcommand(subcommand => subcommand
       .setName('set-duck')
       .setDescription('Set whether to turn down the volume when non-bot users speak')
       .addBooleanOption(option => option
@@ -58,7 +56,6 @@ export default class implements Command {
         .setMinValue(0)
         .setMaxValue(100)
         .setRequired(true)))
-    
     .addSubcommand(subcommand => subcommand
       .setName('set-auto-announce-next-song')
       .setDescription('Set whether to announce the next song in the queue automatically')
