@@ -79,6 +79,10 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
   zlib1g-dev \
   pkg-config \
   libopus-dev \
+  python-is-python3 \
+  libtool \
+  autoconf \
+  automake \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package.json .
