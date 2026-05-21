@@ -10,6 +10,23 @@ import {DATA_DIR} from '../services/config.js';
 
 process.env.DATABASE_URL = process.env.DATABASE_URL ?? createDatabaseUrl(DATA_DIR);
 
+const isRunningInContainer = async () => {
+  try {
+    // Docker typically creates /.dockerenv
+    await fs.access('/.dockerenv');
+    return true;
+  } catch {
+    // ignore
+  }
+
+  try {
+    const cgroup = await fs.readFile('/proc/1/cgroup', 'utf8');
+    return /docker|kubepods|containerd|lxc|podman/.test(cgroup);
+  } catch {
+    return false;
+  }
+};
+
 const migrateFromSequelizeToPrisma = async () => {
   await execa('prisma', ['migrate', 'resolve', '--applied', '20220101155430_migrate_from_sequelize'], {preferLocal: true});
 };
@@ -94,6 +111,12 @@ const resolveFailedMigrations = async () => {
 };
 
 (async () => {
+
+  if (!(await isRunningInContainer())) {
+    console.warn('Warning: Muse is intended to run inside a Docker container. Waiting 60s before continuing...');
+    await new Promise<void>((resolve) => setTimeout(resolve, 60_000));
+  }
+
   console.log('Applying database migrations...');
 
   if (await doesUserHaveExistingDatabase()) {

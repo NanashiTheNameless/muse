@@ -111,7 +111,7 @@ export default class {
     return new Promise(resolve => {
       ffmpeg(url).ffprobe((err, data) => {
         if (err || !data) {
-          // ffprobe failed — play the URL anyway with unknown metadata
+          // ffprobe failed - play the URL anyway with unknown metadata
           resolve({
             url,
             source: MediaSource.Arbitrary,

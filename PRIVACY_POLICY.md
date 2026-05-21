@@ -6,7 +6,7 @@
 
 ## 1. Who Collects Your Data
 
-Muse is self-hosted software. The **operator** of each instance — the person or organization who deployed it — controls all data stored by that instance. This policy describes what data Muse stores by design. Contact your instance's operator with any privacy concerns.
+Muse is self-hosted software. The **operator** of each instance - the person or organization who deployed it - controls all data stored by that instance. This policy describes what data Muse stores by design. Contact your instance's operator with any privacy concerns.
 
 ## 2. Data Collected
 
@@ -40,8 +40,8 @@ When a user saves a favorite, Muse stores:
 
 Muse maintains two caches:
 
-- **File cache** — Hashed audio files temporarily stored on disk to reduce re-downloads. No user identifiers are included.
-- **Key-value cache** — Short-lived metadata responses (e.g. YouTube API results). Entries expire automatically and contain no personal information.
+- **File cache** - Hashed audio files temporarily stored on disk to reduce re-downloads. No user identifiers are included.
+- **Key-value cache** - Short-lived metadata responses (e.g. YouTube API results). Entries expire automatically and contain no personal information.
 
 ## 3. Data Not Collected
 
@@ -56,8 +56,8 @@ Muse does **not** collect or store:
 
 Resolving and playing tracks requires outbound requests to:
 
-- **YouTube Data API v3** — to look up video and playlist metadata.
-- **YouTube** — to stream audio. Cookies may optionally be provided by the operator to authenticate these requests.
+- **YouTube Data API v3** - to look up video and playlist metadata.
+- **YouTube** - to stream audio. Cookies may optionally be provided by the operator to authenticate these requests.
 
 Your use of these services is governed by [Google's Privacy Policy](https://policies.google.com/privacy).
 

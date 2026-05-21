@@ -62,7 +62,7 @@ Use this URL, replacing `YOUR_CLIENT_ID` with your bot's application ID from the
 https://discord.com/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=274914626560&scope=bot%20applications.commands
 ```
 
-The permission integer `274914626560` encodes exactly the seven permissions above — no administrator or unrelated permissions are requested.
+The permission integer `274914626560` encodes exactly the seven permissions above - no administrator or unrelated permissions are requested.
 
 ## Quick Start (Docker)
 
@@ -149,7 +149,7 @@ yt-dlp:
 
 Instance owner:
 
-- `INSTANCE_OWNER_ID` — Discord user ID that bypasses all bot permission checks. This user can use `/config` without Manage Server and run commands without being in a voice channel. Leave unset to disable.
+- `INSTANCE_OWNER_ID` - Discord user ID that bypasses all bot permission checks. This user can use `/config` without Manage Server and run commands without being in a voice channel. Leave unset to disable.
 
 Docker images built from this repo include:
 

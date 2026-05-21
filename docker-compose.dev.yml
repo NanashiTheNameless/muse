@@ -13,7 +13,7 @@ services:
       SERVER_COUNTRIES: United States
 
   muse:
-    image: muse
+    image: nanashithenameless/muse:local
     build:
       context: .
     restart: unless-stopped

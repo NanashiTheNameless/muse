@@ -137,11 +137,11 @@ export default class AddQueryToQueue {
     }
 
     // When inserting at the front one-by-one, each song lands at position 1,
-    // pushing the previous to position 2 — so iterate in reverse to preserve order.
+    // pushing the previous to position 2 - so iterate in reverse to preserve order.
     const songsToAdd = addToFrontOfQueue && newSongs.length > 1 ? [...newSongs].reverse() : newSongs;
 
     // Prepare song objects but don't add to the player's queue until we've
-    // successfully joined the voice channel — if join fails we must not add them.
+    // successfully joined the voice channel - if join fails we must not add them.
     const preparedSongs = songsToAdd.map(song => ({
       ...song,
       addedInChannelId: interaction.channel!.id,
@@ -177,7 +177,7 @@ export default class AddQueryToQueue {
         embeds: [buildPlayingMessageEmbed(player)],
       });
     } else {
-      // Already connected — add songs now.
+      // Already connected - add songs now.
       preparedSongs.forEach(song => {
         player.add(song, {immediate: addToFrontOfQueue ?? false});
       });

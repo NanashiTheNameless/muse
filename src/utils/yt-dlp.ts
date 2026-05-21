@@ -46,47 +46,33 @@ interface YtDlpExtractAttempt {
   readonly format?: string;
   readonly sort?: string;
   readonly extractorArgs?: string;
-  readonly skipJsRuntime?: boolean;
 }
-
-// Broader client list without POT — tried after the default web client.
+// Broader client list without POT - tried after the default web client.
 const YT_DLP_YOUTUBE_EXTENDED_CLIENTS = 'youtube:player_client=tv,ios,mweb';
 // Last-resort args: include formats that are missing POT so yt-dlp can at least find something.
 const YT_DLP_YOUTUBE_FALLBACK_ARGS = `${YT_DLP_YOUTUBE_EXTENDED_CLIENTS};formats=missing_pot`;
 
+// Simplified extraction attempts. We no longer support age-restricted flows so
+// the JS runtime is always enabled to allow JS-based extractors to run.
 const YT_DLP_EXTRACT_ATTEMPTS: YtDlpExtractAttempt[] = [
-  // Default web client first: cookies (e.g. for age-restricted content) are only effective here.
-  // ios/android clients return only storyboard formats for age-restricted videos, so they must
-  // come after this attempt.
-  // skipJsRuntime: using --js-runtimes with the default client breaks cookie auth for
-  // age-restricted videos (triggers "Sign in to confirm your age" even with valid cookies).
   {
-    label: 'bestaudio (default client)',
+    label: 'bestaudio',
     format: 'bestaudio*/bestaudio/b/best',
     sort: 'proto:https',
-    skipJsRuntime: true,
   },
   {
-    label: 'best (default client)',
+    label: 'best',
     format: 'best',
-    skipJsRuntime: true,
   },
-  // Clients that avoid Proof-of-Origin Token (POT) requirements for non-restricted content.
   {
     label: 'bestaudio with extended clients',
     format: 'bestaudio*/bestaudio/b/best',
     sort: 'proto:https',
     extractorArgs: YT_DLP_YOUTUBE_EXTENDED_CLIENTS,
   },
-  // Fallback: allow missing-POT formats in case the above clients return nothing.
   {
     label: 'bestaudio with all clients (missing POT)',
     format: 'bestaudio*/bestaudio/b/best',
-    extractorArgs: YT_DLP_YOUTUBE_FALLBACK_ARGS,
-  },
-  {
-    label: 'best (fallback clients)',
-    format: 'best',
     extractorArgs: YT_DLP_YOUTUBE_FALLBACK_ARGS,
   },
   {
@@ -103,6 +89,11 @@ export const getExecutable = () => {
 
   return configuredPath ?? 'yt-dlp';
 };
+
+// Path to the repository-level yt-dlp config file. Can be overridden with
+// the MUSE_YT_DLP_CONFIG_PATH environment variable.
+const DEFAULT_YT_DLP_CONFIG_PATH = (process.env.MUSE_YT_DLP_CONFIG_PATH && process.env.MUSE_YT_DLP_CONFIG_PATH.trim())
+  || path.resolve(process.cwd(), 'yt-dlp.conf');
 
 const getExecaErrorMessage = (error: unknown) => {
   if (isExecaError(error)) {
@@ -138,16 +129,7 @@ const getYtDlpCookieArgs = () => {
 };
 
 const getYtDlpExtractArgs = (attempt: YtDlpExtractAttempt, videoIdOrUrl: string) => [
-  '--dump-single-json',
-  '--ignore-config',
-  ...(attempt.skipJsRuntime ? [] : ['--js-runtimes', 'deno:/usr/local/bin/deno']),
-  '--no-playlist',
-  '--skip-download',
-  '--no-warnings',
-  '--no-cache-dir',
-  '--extractor-retries', '3',
-  '--retry-sleep', 'extractor:exp=2:16',
-  '--retry-sleep', 'http:exp=1:16',
+  '--config-location', DEFAULT_YT_DLP_CONFIG_PATH,
   ...getYtDlpCookieArgs(),
   ...(attempt.format ? ['-f', attempt.format] : []),
   ...(attempt.sort ? ['-S', attempt.sort] : []),
@@ -414,6 +396,6 @@ export const getYouTubeMediaSource = async (videoIdOrUrl: string): Promise<YtDlp
     }
   }
 
-  // All attempts failed — return a single composed error with the collected reasons.
+  // All attempts failed - return a single composed error with the collected reasons.
   throw new Error(`yt-dlp failed to extract media: ${errors.join(' | ')}`);
 };

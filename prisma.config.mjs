@@ -1,4 +1,4 @@
-// Prisma v7 config — loaded by Prisma CLI during generate/migrate.
+// Prisma v7 config - loaded by Prisma CLI during generate/migrate.
 // Uses plain export default (no defineConfig import needed) to avoid
 // any ESM/CJS resolution issues at generate-time.
 export default {

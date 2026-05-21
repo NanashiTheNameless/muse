@@ -2,7 +2,7 @@
 
 *Applies to the Muse unofficial fork maintained by NanashiTheNameless ([github.com/NanashiTheNameless/muse](https://github.com/NanashiTheNameless/muse)). This is not the upstream Muse project.*
 
-*Last updated: May 19, 2026*
+*Last updated: May 20, 2026*
 
 ## 1. Acceptance
 
@@ -10,7 +10,7 @@ By adding this bot to a Discord server or interacting with it, you agree to thes
 
 ## 2. Self-Hosted Software
 
-Muse is self-hosted software. The operator of any given instance — the person or organization who deployed it — is solely responsible for that instance's availability, configuration, conduct, and compliance with applicable law. These terms apply to users of any Muse instance.
+Muse is self-hosted software. The operator of any given instance - the person or organization who deployed it - is solely responsible for that instance's availability, configuration, conduct, and compliance with applicable law. These terms apply to users of any Muse instance.
 
 ## 3. Permitted Use
 

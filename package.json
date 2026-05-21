@@ -41,7 +41,6 @@
     "@types/node-emoji": "^2.1.0",
     "@types/validator": "^13.15.10",
     "@types/ws": "8.18.1",
-    "prisma": "^7.8.0",
     "release-it": "^20.0.1",
     "type-fest": "^5.6.0",
     "typescript": "^6.0.3"
@@ -88,6 +87,7 @@
     "parse-duration": "^2.1.6",
     "patch-package": "^8.0.1",
     "postinstall-postinstall": "^2.1.0",
+    "prisma": "^7.8.0",
     "read-pkg": "^10.1.0",
     "reflect-metadata": "^0.2.2",
     "sodium-native": "^5.1.0",
