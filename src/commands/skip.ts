@@ -135,7 +135,6 @@ export default class implements Command {
       const needed = Math.floor(othersCount / 2) + 1;
       await this.safeReply(interaction, {
         content: `Skip vote registered (${votes}/${needed} votes needed).`,
-        flags: MessageFlags.Ephemeral,
       });
     }
   }

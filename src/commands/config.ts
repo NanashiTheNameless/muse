@@ -98,9 +98,8 @@ export default class implements Command {
     await getGuildSettings(interaction.guild!.id);
 
     // Defer the interaction to allow longer processing without timing out.
-    // We'll use `editReply` to send the final response. Use flags instead of
-    // the deprecated `ephemeral` option.
-    await interaction.deferReply({flags: MessageFlags.Ephemeral});
+    // We'll use `editReply` to send the final response.
+    await interaction.deferReply();
 
     switch (interaction.options.getSubcommand()) {
       case 'set-playlist-limit': {

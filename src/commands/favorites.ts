@@ -155,7 +155,7 @@ export default class implements Command {
 
       await new Pagination(
         interaction as any,
-      {flags: MessageFlags.Ephemeral, limit: 25} as any)
+      {limit: 25} as any)
       .setFields(fields)
       .paginateFields(true)
       .render();

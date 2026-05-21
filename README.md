@@ -20,7 +20,6 @@ Fork maintained by NanashiTheNameless, based on work by Max Isom and other Muse 
 - Optional SponsorBlock integration
 - Favorite query support
 - Multi-guild support from one bot instance
-- Configurable volume, including optional voice-based ducking
 - Configurable volume, including optional voice-based ducking (triggers on non-bot users speaking)
 
 ## Requirements
@@ -114,11 +113,12 @@ Notes on voice ducking
 
 - Ducking is triggered on non-bot users emitting speech (based on Discord `speaking` events) and uses a short, smooth ramp to reduce/increase playback volume.
 
-Notes on queue responses
+Interaction responses
 
 ---------------------
 
-- Add-to-queue responses are public by default; the per-server `queueAddResponseEphemeral` setting has been removed.
+- Only error or permission messages are sent ephemerally to the command invoker. Informational, progress, and successful action messages (for example: add-to-queue confirmations, skip vote updates, and config results) are public by default so other users can see bot activity.
+- Examples: permission-denied errors and caught command exceptions remain ephemeral; queue additions, playback start/resume messages, and vote registrations are public.
 
 ## Environment Variables
 
