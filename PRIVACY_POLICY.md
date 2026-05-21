@@ -2,7 +2,7 @@
 
 *Applies to the Muse unofficial fork maintained by NanashiTheNameless ([github.com/NanashiTheNameless/muse](https://github.com/NanashiTheNameless/muse)). This is not the upstream Muse project.*
 
-*Last updated: May 19, 2026*
+*Last updated: May 20, 2026*
 
 ## 1. Who Collects Your Data
 
@@ -12,16 +12,16 @@ Muse is self-hosted software. The **operator** of each instance — the person o
 
 ### 2.1 Per-Server Settings
 
-Muse stores the following per-guild configuration in a local SQLite database:
+Muse stores the following per-guild configuration in a SQLite database:
 
 | Field | Description |
-|---|---|
+| --- | --- |
 | Guild ID | Discord server identifier |
 | Playlist limit | Maximum tracks importable from a playlist |
 | Queue/leave behavior | Idle timeout and listener-count settings |
 | Default volume | Playback volume for the server |
 | Default queue page size | Pagination setting |
-| Auto-announce / ephemeral flags | UI behavior toggles |
+| Auto-announce next song | UI behavior toggles |
 
 No message content, user nicknames, or voice data are stored.
 
@@ -30,7 +30,7 @@ No message content, user nicknames, or voice data are stored.
 When a user saves a favorite, Muse stores:
 
 | Field | Description |
-|---|---|
+| --- | --- |
 | Guild ID | Server where the favorite was created |
 | Author ID | Discord user ID of the creator |
 | Name | Label given to the favorite |

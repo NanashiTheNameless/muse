@@ -64,7 +64,7 @@ export default class {
           }
 
           if (!interaction.guild) {
-            await interaction.reply(errorMsg('You cannot use this bot in a DM.'));
+            await interaction.reply({content: errorMsg('You cannot use this bot in a DM.'), flags: MessageFlags.Ephemeral});
             return;
           }
 

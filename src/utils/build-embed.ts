@@ -20,7 +20,8 @@ const getPlayerUI = (player: PlayerPublic) => {
     return '';
   }
 
-  const position = player.getPosition();
+  const rawPosition = player.getPosition();
+  const position = Math.max(0, Math.min(rawPosition, song.length));
   const indicator = player.status === STATUS.PLAYING ? '[playing]' : '[stopped]';
   const progressBar = getProgressBar(10, position / song.length);
   const elapsedTime = song.isLive ? 'live' : `${prettyTime(position)}/${prettyTime(song.length)}`;

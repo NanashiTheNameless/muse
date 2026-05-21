@@ -41,12 +41,7 @@ export default class implements Command {
         .setDescription('Whether to leave when everyone else leaves')
         .setRequired(true)))
     .addSubcommand(subcommand => subcommand
-      .setName('set-queue-add-response-hidden')
-      .setDescription('Set whether bot responses to queue additions are only displayed to the requester')
-      .addBooleanOption(option => option
-        .setName('value')
-        .setDescription('Whether bot responses to queue additions are only displayed to the requester')
-        .setRequired(true)))
+      
     .addSubcommand(subcommand => subcommand
       .setName('set-duck')
       .setDescription('Set whether to turn down the volume when non-bot users speak')
@@ -106,8 +101,9 @@ export default class implements Command {
     await getGuildSettings(interaction.guild!.id);
 
     // Defer the interaction to allow longer processing without timing out.
-    // We'll use `editReply` to send the final response.
-    await interaction.deferReply({ephemeral: true});
+    // We'll use `editReply` to send the final response. Use flags instead of
+    // the deprecated `ephemeral` option.
+    await interaction.deferReply({flags: MessageFlags.Ephemeral});
 
     switch (interaction.options.getSubcommand()) {
       case 'set-playlist-limit': {
@@ -165,22 +161,6 @@ export default class implements Command {
         break;
       }
 
-      case 'set-queue-add-response-hidden': {
-        const value = interaction.options.getBoolean('value')!;
-
-        await prisma.setting.update({
-          where: {
-            guildId: interaction.guild!.id,
-          },
-          data: {
-            queueAddResponseEphemeral: value,
-          },
-        });
-
-        await interaction.editReply('Queue add notification setting updated.');
-
-        break;
-      }
 
       case 'set-auto-announce-next-song': {
         const value = interaction.options.getBoolean('value')!;
@@ -280,7 +260,6 @@ export default class implements Command {
             : `${config.secondsToWaitAfterQueueEmpties}s`,
           'Leave if there are no listeners': config.leaveIfNoListeners ? 'Yes' : 'No',
           'Auto announce next song in queue': config.autoAnnounceNextSong ? 'Yes' : 'No',
-          'Add to queue responses show for requester only': config.queueAddResponseEphemeral ? 'Yes' : 'No',
           'Default Volume': config.defaultVolume,
           'Default queue page size': config.defaultQueuePageSize,
           'Reduce volume when people speak': config.volumeDucking ? 'Yes' : 'No',

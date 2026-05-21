@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:24-slim AS base
+FROM node:lts-trixie-slim AS base
 
 ARG YT_DLP_CHANNEL=stable
 ARG YT_DLP_VERSION=
@@ -8,7 +8,7 @@ ARG DENO_VERSION=
 ENV MUSE_BUNDLED_YT_DLP_PATH=/opt/yt-dlp/bin/yt-dlp
 
 # Install ffmpeg/ffprobe and yt-dlp runtime dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     ffmpeg \
     tini \
     openssl \
@@ -70,7 +70,7 @@ FROM base AS dependencies
 WORKDIR /usr/app
 
 # Add Python and build tools to compile native modules
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
   python3 \
   python3-venv \
   build-essential \

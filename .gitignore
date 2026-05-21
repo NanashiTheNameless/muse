@@ -112,3 +112,6 @@ dist
 # Cookies file(s)
 cookies.txt
 cookies.txt.*
+
+# dev DB
+dev.db

@@ -1,5 +1,5 @@
 import {SlashCommandBuilder} from '@discordjs/builders';
-import {APIEmbedField, AutocompleteInteraction, ChatInputCommandInteraction} from 'discord.js';
+import {APIEmbedField, AutocompleteInteraction, ChatInputCommandInteraction, MessageFlags} from 'discord.js';
 import {inject, injectable} from 'inversify';
 import Command from './index.js';
 import AddQueryToQueue from '../services/add-query-to-queue.js';
@@ -155,7 +155,7 @@ export default class implements Command {
 
       await new Pagination(
         interaction as any,
-      {ephemeral: true, limit: 25})
+      {flags: MessageFlags.Ephemeral, limit: 25} as any)
       .setFields(fields)
       .paginateFields(true)
       .render();

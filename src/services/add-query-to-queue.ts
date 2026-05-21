@@ -56,9 +56,9 @@ export default class AddQueryToQueue {
 
     const settings = await getGuildSettings(guildId);
 
-    const {playlistLimit, queueAddResponseEphemeral} = settings;
+    const {playlistLimit} = settings;
 
-    await interaction.deferReply({flags: queueAddResponseEphemeral ? MessageFlags.Ephemeral : undefined});
+    await interaction.deferReply({flags: MessageFlags.Ephemeral});
     await interaction.editReply('Looking that up...');
     debug(`Queue lookup started: guild=${guildId} query=${query}`);
 

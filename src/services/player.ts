@@ -106,6 +106,8 @@ export default class Player implements PlayerPublic {
   private duckInterval: NodeJS.Timeout | null = null;
   private duckTargetVolume: number | null = null;
   private ducking = false;
+  private pauseResourceTimeout: NodeJS.Timeout | null = null;
+  public static readonly PAUSE_RESOURCE_TTL_MS = 5 * 60 * 1000; // 5 minutes
   // Expose override info via public getters
   public isVolumeOverridden(): boolean {
     return this.preDuckingVolume !== null && this.duckTargetVolume !== null;
@@ -241,11 +243,13 @@ export default class Player implements PlayerPublic {
       },
     });
     voiceConnection.subscribe(this.audioPlayer);
+    // Mark as playing and set nowPlaying before starting the resource so
+    // idle handlers and ducking logic observe the correct state.
+    this.nowPlaying = currentSong;
+    this.status = STATUS.PLAYING;
     this.playAudioPlayerResource(this.createAudioStream(stream));
     this.attachListeners();
     this.startTrackingPosition(positionSeconds);
-
-    this.status = STATUS.PLAYING;
   }
 
   async forwardSeek(positionSeconds: number): Promise<void> {
@@ -274,8 +278,23 @@ export default class Player implements PlayerPublic {
     // Resume from paused state
     if (this.status === STATUS.PAUSED && currentSong.url === this.nowPlaying?.url) {
       if (this.audioPlayer) {
+        // If the underlying resource is missing or the player is not in a
+        // paused state (it may have gone idle while paused), recreate the
+        // stream via seek instead of attempting to unpause a dead player.
+        if (!this.audioResource || this.audioPlayer.state.status !== AudioPlayerStatus.Paused) {
+          return this.seek(this.getPosition());
+        }
+
+        // Clear any scheduled teardown since we're resuming playback.
+        if (this.pauseResourceTimeout) {
+          clearTimeout(this.pauseResourceTimeout);
+          this.pauseResourceTimeout = null;
+        }
+
         this.audioPlayer.unpause();
         this.status = STATUS.PLAYING;
+        // Ensure resource volume/state is reapplied after resume.
+        this.setAudioPlayerVolume();
         this.startTrackingPosition();
         return;
       }
@@ -302,12 +321,13 @@ export default class Player implements PlayerPublic {
         },
       });
       voiceConnection.subscribe(this.audioPlayer);
+      // Mark as playing and set nowPlaying before starting the resource so
+      // idle handlers and ducking logic observe the correct state.
+      this.nowPlaying = currentSong;
+      this.status = STATUS.PLAYING;
       this.playAudioPlayerResource(this.createAudioStream(stream));
 
       this.attachListeners();
-
-      this.status = STATUS.PLAYING;
-      this.nowPlaying = currentSong;
 
       // We've successfully started playback for the requested song; clear transient ignore flag
       if (this.shouldIgnoreNextIdleEvent) {
@@ -347,6 +367,30 @@ export default class Player implements PlayerPublic {
 
     if (this.audioPlayer) {
       this.audioPlayer.pause();
+      // Stop any in-progress duck/ramp so it doesn't continue while paused.
+      if (this.duckInterval) {
+        clearInterval(this.duckInterval);
+        this.duckInterval = null;
+      }
+      // Re-apply the current volume on the resource to ensure state is consistent.
+      this.setAudioPlayerVolume();
+      // Schedule tearing down the ffmpeg/resource after TTL to avoid leaking while paused.
+      if (this.pauseResourceTimeout) {
+        clearTimeout(this.pauseResourceTimeout);
+      }
+      this.pauseResourceTimeout = setTimeout(() => {
+        if (this.status === STATUS.PAUSED) {
+          debug('pause: tearing down audio resource after TTL');
+          try {
+            this.audioPlayer?.stop(true);
+          } catch (e) {
+            // ignore
+          }
+          this.audioPlayer = null;
+          this.audioResource = null;
+        }
+        this.pauseResourceTimeout = null;
+      }, Player.PAUSE_RESOURCE_TTL_MS);
     }
 
     this.stopTrackingPosition();
@@ -419,8 +463,11 @@ export default class Player implements PlayerPublic {
       if (!member || member.user?.bot) return;
 
       // Fast-path: use Discord speaking flag to mark as speaking immediately
-      // We no longer sample audio; the detection is based solely on the speaking flag.
-      markAsSpeaking();
+      // Only mark speaking when playback is active; ignore when paused/not playing.
+      debug('speaking start', {guild: this.guildId, channel: this.currentChannel?.id, userId, status: this.status});
+      if (this.status === STATUS.PLAYING) {
+        markAsSpeaking();
+      }
       return;
     });
 
@@ -437,6 +484,9 @@ export default class Player implements PlayerPublic {
       const existing = this.speakingEndTimeouts.get(userId);
       if (existing) { clearTimeout(existing); this.speakingEndTimeouts.delete(userId); }
 
+      debug('speaking end scheduled', {guild: this.guildId, channel: this.currentChannel?.id, userId, status: this.status});
+      // Only schedule end handling if playback is active. If paused, skip scheduling.
+      if (this.status !== STATUS.PLAYING) return;
       const t = setTimeout(() => {
         this.speakingEndTimeouts.delete(userId);
         if (!this.currentChannel) return;
@@ -456,10 +506,19 @@ export default class Player implements PlayerPublic {
       return;
     }
 
+    // Only adjust ducking/volume when audio is actively playing. This prevents
+    // ducking logic from running during startup/stream setup which can interfere
+    // with playback starting.
+    if (this.status !== STATUS.PLAYING) {
+      debug('suppressVoiceWhenPeopleAreSpeaking: skipping because not playing', {status: this.status});
+      return;
+    }
+
     const speakingUsers = this.channelToSpeakingUsers.get(this.currentChannel.id);
     const currentVol = this.volume || this.defaultVolume;
     const isSpeaking = speakingUsers && speakingUsers.size > 0;
-    
+    debug('suppressVoiceWhenPeopleAreSpeaking', {guild: this.guildId, channel: this.currentChannel.id, speakingUsers: Array.from(speakingUsers ?? []), currentVol, volumeDuckingTarget, isSpeaking});
+
     if (isSpeaking) {
       // Compute effective target volume (0-100)
       const requested = Math.round(volumeDuckingTarget);
@@ -476,6 +535,7 @@ export default class Player implements PlayerPublic {
         this.duckTargetVolume = effectiveTarget;
         this.ducking = true;
         // Ramp down quickly for responsiveness
+        debug('duck: ramping down', {from: currentVol, to: effectiveTarget});
         void this.rampVolumeTo(effectiveTarget, 180);
       }
     } else if (this.preDuckingVolume !== null) {
@@ -485,6 +545,7 @@ export default class Player implements PlayerPublic {
       this.duckTargetVolume = null;
       this.ducking = false;
       // Ramp up a bit slower for smoothness
+      debug('duck: restoring volume', {restoreTo});
       void this.rampVolumeTo(restoreTo, 600);
     }
   }
@@ -634,6 +695,7 @@ export default class Player implements PlayerPublic {
     }
 
     const start = this.getVolume();
+    debug('rampVolumeTo start', {start, target, durationMs});
     const clampedTarget = Math.max(0, Math.min(100, target));
 
     if (durationMs <= 0 || start === clampedTarget) {
@@ -996,15 +1058,28 @@ export default class Player implements PlayerPublic {
 
   private playAudioPlayerResource(resource: AudioResource) {
     if (this.audioPlayer !== null) {
+      // Clear any pause-timeout if we're about to attach a new resource.
+      if (this.pauseResourceTimeout) {
+        clearTimeout(this.pauseResourceTimeout);
+        this.pauseResourceTimeout = null;
+      }
+
       this.audioResource = resource;
+      debug('playAudioPlayerResource: new resource', {url: this.nowPlaying?.url, ducking: this.ducking, preDuckingVolume: this.preDuckingVolume, duckTargetVolume: this.duckTargetVolume});
       this.setAudioPlayerVolume();
-      debug('playAudioPlayerResource: calling audioPlayer.play', {url: this.nowPlaying?.url, volume: this.getVolume()});
+      debug('playAudioPlayerResource: calling audioPlayer.play', {url: this.nowPlaying?.url, volume: this.getVolume(), audioResourceVolume: this.audioResource?.volume?.volume});
       this.audioPlayer.play(this.audioResource);
     }
   }
 
   private setAudioPlayerVolume(level?: number) {
     // Audio resource expects a float between 0 and 1 to represent level percentage
-    this.audioResource?.volume?.setVolume((level ?? this.getVolume()) / 100);
+    const effective = (level ?? this.getVolume());
+    debug('setAudioPlayerVolume', {level, effective});
+    try {
+      this.audioResource?.volume?.setVolume(effective / 100);
+    } catch (err) {
+      debug('setAudioPlayerVolume: failed to set volume', {err: (err as Error).message, effective, audioResource: !!this.audioResource});
+    }
   }
 }

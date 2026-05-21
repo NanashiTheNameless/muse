@@ -21,7 +21,7 @@ Fork maintained by NanashiTheNameless, based on work by Max Isom and other Muse 
 - Favorite query support
 - Multi-guild support from one bot instance
 - Configurable volume, including optional voice-based ducking
- - Configurable volume, including optional voice-based ducking (triggers on non-bot users speaking)
+- Configurable volume, including optional voice-based ducking (triggers on non-bot users speaking)
 
 ## Requirements
 
@@ -47,7 +47,7 @@ The bot requires the following OAuth2 scopes and permissions:
 **Permissions:**
 
 | Permission | Reason |
-|---|---|
+| --- | --- |
 | View Channels | Receive slash command interactions |
 | Send Messages | Respond to commands |
 | Send Messages in Threads | Respond to commands in threads |
@@ -58,7 +58,7 @@ The bot requires the following OAuth2 scopes and permissions:
 
 Use this URL, replacing `YOUR_CLIENT_ID` with your bot's application ID from the [Discord Developer Portal](https://discord.com/developers/applications):
 
-```
+```text
 https://discord.com/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=274914626560&scope=bot%20applications.commands
 ```
 
@@ -109,10 +109,16 @@ yarn start
 This project requires Node.js 24.15.0 or newer.
 
 Notes on voice ducking
+
 ---------------------
 
- - Ducking is triggered on non-bot users emitting speech (based on Discord `speaking` events).
+- Ducking is triggered on non-bot users emitting speech (based on Discord `speaking` events) and uses a short, smooth ramp to reduce/increase playback volume.
 
+Notes on queue responses
+
+---------------------
+
+- Add-to-queue responses are public by default; the per-server `queueAddResponseEphemeral` setting has been removed.
 
 ## Environment Variables
 
@@ -148,7 +154,7 @@ Instance owner:
 Docker images built from this repo include:
 
 - `ffmpeg` and `ffprobe`
- - `yt-dlp` (master build by default)
+- `yt-dlp` (master build by default)
 - `deno`
 
 ## Cookies for YouTube Bot Checks
