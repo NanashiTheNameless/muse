@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:lts-trixie-slim AS base
+FROM node:lts-slim AS base
 
 ARG YT_DLP_CHANNEL=master
 ARG YT_DLP_VERSION=
