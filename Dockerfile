@@ -2,7 +2,7 @@
 
 FROM node:lts-trixie-slim AS base
 
-ARG YT_DLP_CHANNEL=stable
+ARG YT_DLP_CHANNEL=master
 ARG YT_DLP_VERSION=
 ARG DENO_VERSION=
 ENV MUSE_BUNDLED_YT_DLP_PATH=/opt/yt-dlp/bin/yt-dlp
