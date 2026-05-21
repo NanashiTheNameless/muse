@@ -25,10 +25,19 @@ const getPlayerUI = (player: PlayerPublic) => {
   const progressBar = getProgressBar(10, position / song.length);
   const elapsedTime = song.isLive ? 'live' : `${prettyTime(position)}/${prettyTime(song.length)}`;
   const loop = player.loopCurrentSong ? '[loop-song]' : player.loopCurrentQueue ? '[loop-queue]' : '';
-  const vol: string = typeof player.getVolume() === 'number' ? `${player.getVolume()!}%` : '';
-  const overrideText = player.isVolumeOverridden()
-    ? ` (overridden to ${player.getOverriddenTarget()}% due to speaking)`
-    : '';
+  let vol: string;
+  let overrideText = '';
+
+  if (player.isVolumeOverridden() && player.getPreDuckingVolume() !== null) {
+    // Show the user's configured volume as the primary value and append the
+    // current effective (ducked) volume as the override info so the UI isn't
+    // confusing when people are speaking.
+    vol = `${player.getPreDuckingVolume()}%`;
+    overrideText = ` (overridden to ${player.getVolume()}% due to speaking)`;
+  } else {
+    vol = typeof player.getVolume() === 'number' ? `${player.getVolume()!}%` : '';
+  }
+
   return `${indicator} ${progressBar} \`[${elapsedTime}]\` vol ${vol}${overrideText} ${loop}`;
 };
 

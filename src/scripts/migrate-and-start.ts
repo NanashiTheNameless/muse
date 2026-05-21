@@ -2,7 +2,7 @@
 // and then starts Muse.
 import {execa, ExecaError} from 'execa';
 import {promises as fs} from 'fs';
-import Prisma from '@prisma/client';
+import * as Prisma from '@prisma/client';
 import {PrismaBetterSqlite3} from '@prisma/adapter-better-sqlite3';
 import {startBot} from '../index.js';
 import createDatabaseUrl, {createDatabasePath} from '../utils/create-database-url.js';
@@ -25,14 +25,17 @@ const doesUserHaveExistingDatabase = async () => {
 };
 
 const hasDatabaseBeenMigratedToPrisma = async () => {
-  const client = new Prisma.PrismaClient({
+  const PrismaPkg: any = Prisma as any;
+  const PrismaClientCtor = PrismaPkg.PrismaClient ?? PrismaPkg.default ?? PrismaPkg;
+  const client = new PrismaClientCtor({
     adapter: new PrismaBetterSqlite3({url: process.env.DATABASE_URL}),
   });
 
   try {
     await client.$queryRaw`SELECT COUNT(id) FROM _prisma_migrations`;
   } catch (error: unknown) {
-    if (error instanceof Prisma.Prisma.PrismaClientKnownRequestError && error.code === 'P2010') {
+    const e: any = error;
+    if (e && e.code === 'P2010') {
       // Table doesn't exist
       await client.$disconnect();
       return false;
@@ -47,7 +50,9 @@ const hasDatabaseBeenMigratedToPrisma = async () => {
 };
 
 const getFailedPrismaMigrations = async () => {
-  const client = new Prisma.PrismaClient({
+  const PrismaPkg2: any = Prisma as any;
+  const PrismaClientCtor2 = PrismaPkg2.PrismaClient ?? PrismaPkg2.default ?? PrismaPkg2;
+  const client = new PrismaClientCtor2({
     adapter: new PrismaBetterSqlite3({url: process.env.DATABASE_URL}),
   });
 
@@ -61,9 +66,10 @@ const getFailedPrismaMigrations = async () => {
     `;
 
     await client.$disconnect();
-    return failedMigrations.map((migration) => migration.migration_name);
+    return failedMigrations.map((migration: any) => migration.migration_name);
   } catch (error: unknown) {
-    if (error instanceof Prisma.Prisma.PrismaClientKnownRequestError && error.code === 'P2010') {
+    const e: any = error;
+    if (e && e.code === 'P2010') {
       await client.$disconnect();
       return [];
     }

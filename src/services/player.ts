@@ -611,9 +611,11 @@ export default class Player implements PlayerPublic {
   }
 
   setVolume(level: number): void {
-    // Level should be a number between 0 and 100 = 0% => 100%
-    this.volume = level;
-    this.setAudioPlayerVolume(level);
+    // Level should be a number between 0 and 100 => 0%..100%
+    const safe = Number.isFinite(level) ? Math.round(level) : this.defaultVolume;
+    const clamped = Math.max(0, Math.min(100, safe));
+    this.volume = clamped;
+    this.setAudioPlayerVolume(clamped);
   }
 
   getVolume(): number {

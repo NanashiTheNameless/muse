@@ -6,7 +6,6 @@ import Config from './config.js';
 import PQueue from 'p-queue';
 import debug from '../utils/debug.js';
 import {prisma} from '../utils/db.js';
-import {FileCache} from '@prisma/client';
 
 @injectable()
 export default class FileCacheProvider {
@@ -241,7 +240,7 @@ export default class FileCacheProvider {
     const limit = 50;
     let previousCreatedAt: Date | null = null;
 
-    let models: FileCache[] = [];
+    let models: any[] = [];
 
     const fetchNextBatch = async () => {
       let where;
@@ -277,7 +276,7 @@ export default class FileCacheProvider {
 
             if (models.length === 0) {
               // Must return value here for types to be inferred correctly
-              return {done: true, value: null as unknown as FileCache};
+              return {done: true, value: null as unknown as any};
             }
 
             return {value: models.shift()!, done: false};
