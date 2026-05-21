@@ -6,6 +6,7 @@ ARG YT_DLP_CHANNEL=stable
 ARG YT_DLP_VERSION=
 ARG DENO_VERSION=
 ENV MUSE_BUNDLED_YT_DLP_PATH=/opt/yt-dlp/bin/yt-dlp
+ENV DEBIAN_FRONTEND=noninteractive
 
 # Install ffmpeg/ffprobe and yt-dlp runtime dependencies
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
