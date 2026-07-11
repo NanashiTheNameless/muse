@@ -20,11 +20,11 @@ services:
       - gluetun
     volumes:
       - ./data:/data
-      - ./cookies.txt:/cookies.txt
+      - ./cookies.txt:/run/secrets/youtube-cookies.txt:ro
     env_file:
       - .env
     environment:
       DATA_DIR: /data
       DATABASE_URL: "file:/data/prisma.db"
-      YT_DLP_COOKIES_PATH: "/cookies.txt"
+      YT_DLP_COOKIES_PATH: "/run/secrets/youtube-cookies.txt"
       YT_DLP_AUTO_UPDATE: "true"
