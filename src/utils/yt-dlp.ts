@@ -1,5 +1,6 @@
 import {execa} from 'execa';
 import {constants as fsConstants, promises as fs} from 'fs';
+import {tmpdir} from 'os';
 import path from 'path';
 
 const YT_DLP_VERSION_TIMEOUT_MS = 15_000;
@@ -80,9 +81,57 @@ const YT_DLP_EXTRACT_ATTEMPTS: YtDlpExtractAttempt[] = [
   },
 ];
 
+export type YtDlpMediaUnavailableReason = 'age-restricted' | 'unavailable';
+
+export class YtDlpMediaUnavailableError extends Error {
+  readonly reason: YtDlpMediaUnavailableReason;
+
+  constructor(message: string, reason: YtDlpMediaUnavailableReason = 'unavailable') {
+    super(message);
+    this.name = 'YtDlpMediaUnavailableError';
+    this.reason = reason;
+  }
+}
+
+const getMediaUnavailableReason = (detail: string): YtDlpMediaUnavailableReason | null => {
+  if (/sign in to confirm your age/i.test(detail)) {
+    return 'age-restricted';
+  }
+
+  return [
+    /this video is not available/i,
+    /video unavailable/i,
+    /private video/i,
+    /video has been removed/i,
+    /members-only content/i,
+  ].some(pattern => pattern.test(detail))
+    ? 'unavailable'
+    : null;
+};
+
 const firstNonEmpty = (...values: Array<string | undefined>) => values
   .map(value => value?.trim())
   .find((value): value is string => Boolean(value));
+
+const withTemporaryCookies = async <T>(operation: (cookiesPath?: string) => Promise<T>): Promise<T> => {
+  const configuredCookiesPath = firstNonEmpty(process.env.YT_DLP_COOKIES_PATH);
+  if (!configuredCookiesPath) {
+    return operation();
+  }
+
+  const temporaryDirectory = await fs.mkdtemp(path.join(tmpdir(), 'muse-yt-dlp-'));
+  const temporaryCookiesPath = path.join(temporaryDirectory, 'youtube-cookies.txt');
+
+  try {
+    await fs.chmod(temporaryDirectory, 0o700);
+    await fs.copyFile(configuredCookiesPath, temporaryCookiesPath, fsConstants.COPYFILE_EXCL);
+    await fs.chmod(temporaryCookiesPath, 0o600);
+
+    return await operation(temporaryCookiesPath);
+  } finally {
+    await fs.rm(temporaryDirectory, {recursive: true, force: true});
+  }
+};
 
 export const getExecutable = () => {
   const configuredPath = firstNonEmpty(process.env.YT_DLP_PATH, process.env.MUSE_BUNDLED_YT_DLP_PATH);
@@ -122,15 +171,9 @@ const toYouTubeWatchUrl = (videoIdOrUrl: string) => videoIdOrUrl.length === 11
   ? `https://www.youtube.com/watch?v=${videoIdOrUrl}`
   : videoIdOrUrl;
 
-const getYtDlpCookieArgs = () => {
-  const cookiesPath = process.env.YT_DLP_COOKIES_PATH?.trim();
-
-  return cookiesPath ? ['--cookies', cookiesPath] : [];
-};
-
-const getYtDlpExtractArgs = (attempt: YtDlpExtractAttempt, videoIdOrUrl: string) => [
+const getYtDlpExtractArgs = (attempt: YtDlpExtractAttempt, videoIdOrUrl: string, cookiesPath?: string) => [
   '--config-location', DEFAULT_YT_DLP_CONFIG_PATH,
-  ...getYtDlpCookieArgs(),
+  ...(cookiesPath ? ['--cookies', cookiesPath] : []),
   ...(attempt.format ? ['-f', attempt.format] : []),
   ...(attempt.sort ? ['-S', attempt.sort] : []),
   ...(attempt.extractorArgs ? ['--extractor-args', attempt.extractorArgs] : []),
@@ -227,7 +270,7 @@ const updateWithPip = async () => {
     '--disable-pip-version-check',
     '--no-input',
     '--upgrade',
-    'yt-dlp',
+    'yt-dlp[default]',
   ], {
     env: {
       PIP_DISABLE_PIP_VERSION_CHECK: '1',
@@ -365,8 +408,8 @@ export const updateYtDlp = async (): Promise<YtDlpUpdateResult> => {
   };
 };
 
-const extractYouTubeMediaSource = async (videoIdOrUrl: string, attempt: YtDlpExtractAttempt): Promise<YtDlpMediaSource> => {
-  const {stdout} = await execa(getExecutable(), getYtDlpExtractArgs(attempt, videoIdOrUrl), {
+const extractYouTubeMediaSource = async (videoIdOrUrl: string, attempt: YtDlpExtractAttempt, cookiesPath?: string): Promise<YtDlpMediaSource> => {
+  const {stdout} = await execa(getExecutable(), getYtDlpExtractArgs(attempt, videoIdOrUrl, cookiesPath), {
     timeout: YT_DLP_EXTRACT_TIMEOUT_MS,
   });
 
@@ -384,18 +427,27 @@ const extractYouTubeMediaSource = async (videoIdOrUrl: string, attempt: YtDlpExt
   };
 };
 
-export const getYouTubeMediaSource = async (videoIdOrUrl: string): Promise<YtDlpMediaSource> => {
+export const getYouTubeMediaSource = async (videoIdOrUrl: string): Promise<YtDlpMediaSource> => withTemporaryCookies(async cookiesPath => {
   const errors: string[] = [];
+  let unavailableReason: YtDlpMediaUnavailableReason | null = null;
 
   for (const attempt of YT_DLP_EXTRACT_ATTEMPTS) {
     try {
       // eslint-disable-next-line no-await-in-loop
-      return await extractYouTubeMediaSource(videoIdOrUrl, attempt);
+      return await extractYouTubeMediaSource(videoIdOrUrl, attempt, cookiesPath);
     } catch (error: unknown) {
-      errors.push(`${attempt.label}: ${getExecaErrorMessage(error)}`);
+      const detail = getExecaErrorMessage(error);
+      errors.push(`${attempt.label}: ${detail}`);
+      unavailableReason ??= getMediaUnavailableReason(detail);
     }
   }
 
   // All attempts failed - return a single composed error with the collected reasons.
-  throw new Error(`yt-dlp failed to extract media: ${errors.join(' | ')}`);
-};
+  const message = `yt-dlp failed to extract media: ${errors.join(' | ')}`;
+
+  if (unavailableReason) {
+    throw new YtDlpMediaUnavailableError(message, unavailableReason);
+  }
+
+  throw new Error(message);
+});

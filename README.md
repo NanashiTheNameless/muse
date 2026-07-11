@@ -84,9 +84,12 @@ services:
     restart: always
     volumes:
       - ./muse:/data
+      # Optional: mount YouTube-only cookies for age-restricted videos.
+      # - ./youtube-cookies.txt:/run/secrets/youtube-cookies.txt:ro
     environment:
       - DISCORD_TOKEN=
       - YOUTUBE_API_KEY=
+      # - YT_DLP_COOKIES_PATH=/run/secrets/youtube-cookies.txt
 ```
 
 If you keep the same `DISCORD_TOKEN` and reuse the same `/data` volume, bot identity and persisted data remain intact across image updates.
@@ -180,7 +183,7 @@ services:
       - YT_DLP_COOKIES_PATH=/cookies.txt
 ```
 
-The cookies file must be writable because yt-dlp may refresh cookies.
+The mounted cookies file may be read-only; Muse copies it to a private per-extraction temporary file because yt-dlp refreshes the cookie jar while it runs.
 
 ## CI and Publishing
 

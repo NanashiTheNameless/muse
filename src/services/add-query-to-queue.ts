@@ -151,6 +151,7 @@ export default class AddQueryToQueue {
     const firstSong = newSongs[0];
 
     let statusMsg = '';
+    let shouldShowPlayingEmbed = false;
 
     if (player.voiceConnection === null) {
       await interaction.editReply(`Joining **${targetVoiceChannel.name}**...`);
@@ -173,9 +174,7 @@ export default class AddQueryToQueue {
         statusMsg = 'resuming playback';
       }
 
-      await interaction.editReply({
-        embeds: [buildPlayingMessageEmbed(player)],
-      });
+      shouldShowPlayingEmbed = true;
     } else {
       // Already connected - add songs now.
       preparedSongs.forEach(song => {
@@ -186,6 +185,16 @@ export default class AddQueryToQueue {
         // Player is idle, start playback instead
         await player.play();
       }
+    }
+
+    if (!player.getCurrent()) {
+      throw new Error('no playable songs found');
+    }
+
+    if (shouldShowPlayingEmbed) {
+      await interaction.editReply({
+        embeds: [buildPlayingMessageEmbed(player)],
+      });
     }
 
     if (skipCurrentTrack) {
