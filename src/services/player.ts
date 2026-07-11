@@ -22,7 +22,7 @@ import FileCacheProvider from './file-cache.js';
 import debug from '../utils/debug.js';
 import {getGuildSettings} from '../utils/get-guild-settings.js';
 import {buildPlayingMessageEmbed} from '../utils/build-embed.js';
-import {getYouTubeMediaSource} from '../utils/yt-dlp.js';
+import {getYouTubeMediaSource, YtDlpMediaUnavailableError} from '../utils/yt-dlp.js';
 
 export enum MediaSource {
   Youtube,
@@ -50,6 +50,8 @@ export interface QueuedSong extends SongMetadata {
   addedInChannelId: Snowflake;
   requestedBy: string;
 }
+
+export type AgeRestrictedFallbackResolver = (song: QueuedSong) => Promise<SongMetadata | null>;
 
 export enum STATUS {
   PLAYING,
@@ -97,6 +99,7 @@ export default class Player implements PlayerPublic {
 
   private positionInSeconds = 0;
   private readonly fileCache: FileCacheProvider;
+  private readonly ageRestrictedFallbackResolver?: AgeRestrictedFallbackResolver;
   private disconnectTimer: NodeJS.Timeout | null = null;
   private shouldIgnoreNextIdleEvent = false;
 
@@ -124,9 +127,10 @@ export default class Player implements PlayerPublic {
   private speakingEma: Map<string, number> = new Map();
   private speakingEndTimeouts: Map<string, NodeJS.Timeout> = new Map();
 
-  constructor(fileCache: FileCacheProvider, guildId: string) {
+  constructor(fileCache: FileCacheProvider, guildId: string, ageRestrictedFallbackResolver?: AgeRestrictedFallbackResolver) {
     this.fileCache = fileCache;
     this.guildId = guildId;
+    this.ageRestrictedFallbackResolver = ageRestrictedFallbackResolver;
   }
 
   async connect(channel: VoiceChannel): Promise<void> {
@@ -161,6 +165,10 @@ export default class Player implements PlayerPublic {
     this.voiceConnection = voiceConnection;
     this.currentChannel = channel;
     this.hasRegisteredVoiceActivityListener = false;
+
+    voiceConnection.on('error', error => {
+      console.error(`Voice connection error for guild ${this.guildId}:`, error);
+    });
 
     const guildSettings = await getGuildSettings(this.guildId);
     const stateTransitions = [voiceConnection.state.status];
@@ -260,7 +268,7 @@ export default class Player implements PlayerPublic {
     return this.positionInSeconds;
   }
 
-  async play(): Promise<void> {
+  async play(allowAgeRestrictedFallback = true): Promise<void> {
     const voiceConnection = await this.ensureVoiceConnectionReady();
 
     const currentSong = this.getCurrent();
@@ -343,15 +351,23 @@ export default class Player implements PlayerPublic {
         this.lastSongURL = currentSong.url;
       }
     } catch (error: unknown) {
-      await this.forward(1);
+      const isGone = typeof error === 'object'
+        && error !== null
+        && 'statusCode' in error
+        && error.statusCode === 410;
 
-      if ((error as {statusCode: number}).statusCode === 410 && currentSong) {
-        const channelId = currentSong.addedInChannelId;
+      if (error instanceof YtDlpMediaUnavailableError
+        && error.reason === 'age-restricted'
+        && allowAgeRestrictedFallback
+        && await this.tryAgeRestrictedAudioFallback(currentSong)) {
+        return;
+      }
 
-        if (channelId) {
-          debug(`${currentSong.title} is unavailable`);
-          return;
-        }
+      if (error instanceof YtDlpMediaUnavailableError || isGone) {
+        const detail = error instanceof Error ? error.message : 'media returned HTTP 410';
+        console.warn(`Skipping unplayable YouTube track for guild ${this.guildId}: ${detail}`);
+        await this.advancePastUnplayableTrack();
+        return;
       }
 
       throw error;
@@ -408,20 +424,7 @@ export default class Player implements PlayerPublic {
       if (this.getCurrent() && this.status !== STATUS.PAUSED) {
         await this.play();
       } else {
-        this.status = STATUS.IDLE;
-        this.audioPlayer?.stop(true);
-
-        const settings = await getGuildSettings(this.guildId);
-
-        const {secondsToWaitAfterQueueEmpties} = settings;
-        if (secondsToWaitAfterQueueEmpties !== 0) {
-          this.disconnectTimer = setTimeout(() => {
-            // Ensure we are not accidentally playing when disconnecting
-            if (this.status === STATUS.IDLE) {
-              this.disconnect();
-            }
-          }, secondsToWaitAfterQueueEmpties * 1000);
-        }
+        await this.finishQueue();
       }
     } catch (error: unknown) {
       // Revert queue position if an error occurs
@@ -861,7 +864,7 @@ export default class Player implements PlayerPublic {
     debug('attachListeners: binding idle listener', {hasPlayer: !!player});
 
     if (player.listeners(AudioPlayerStatus.Idle).length === 0) {
-      player.on(AudioPlayerStatus.Idle, async (oldState, newState) => {
+      player.on(AudioPlayerStatus.Idle, (oldState, newState) => {
         debug('audioPlayer Idle event fired', {oldStatus: oldState.status, newStatus: newState.status, nowPlaying: this.nowPlaying?.url});
         // Ignore idle events from players that are no longer active.
         if (this.audioPlayer !== player) {
@@ -869,7 +872,9 @@ export default class Player implements PlayerPublic {
           return;
         }
 
-        await this.onAudioPlayerIdle(oldState, newState);
+        void this.onAudioPlayerIdle(oldState, newState).catch(error => {
+          console.error(`Audio player idle handler failed for guild ${this.guildId}:`, error);
+        });
       });
     }
   }
@@ -923,6 +928,77 @@ export default class Player implements PlayerPublic {
   private destroyVoiceConnection(voiceConnection: VoiceConnection): void {
     if (voiceConnection.state.status !== VoiceConnectionStatus.Destroyed) {
       voiceConnection.destroy();
+    }
+  }
+
+  private async finishQueue(): Promise<void> {
+    this.status = STATUS.IDLE;
+    this.audioPlayer?.stop(true);
+
+    const settings = await getGuildSettings(this.guildId);
+
+    const {secondsToWaitAfterQueueEmpties} = settings;
+    if (secondsToWaitAfterQueueEmpties !== 0) {
+      this.disconnectTimer = setTimeout(() => {
+        // Ensure we are not accidentally playing when disconnecting
+        if (this.status === STATUS.IDLE) {
+          this.disconnect();
+        }
+      }, secondsToWaitAfterQueueEmpties * 1000);
+    }
+  }
+
+  private async advancePastUnplayableTrack(): Promise<void> {
+    this.manualForward(1);
+
+    if (!this.getCurrent()) {
+      await this.finishQueue();
+      return;
+    }
+
+    await this.play();
+  }
+
+  private async tryAgeRestrictedAudioFallback(song: QueuedSong): Promise<boolean> {
+    if (!this.ageRestrictedFallbackResolver || song.source !== MediaSource.Youtube) {
+      return false;
+    }
+
+    let fallback: SongMetadata | null;
+    try {
+      fallback = await this.ageRestrictedFallbackResolver(song);
+    } catch {
+      console.warn(`Audio fallback search failed for age-restricted track in guild ${this.guildId}.`);
+      return false;
+    }
+
+    if (this.getCurrent() !== song) {
+      return true;
+    }
+
+    if (!fallback || fallback.source !== MediaSource.Youtube || fallback.url === song.url) {
+      return false;
+    }
+
+    const {queuePosition} = this;
+    const replacement: QueuedSong = {
+      ...fallback,
+      playlist: song.playlist,
+      addedInChannelId: song.addedInChannelId,
+      requestedBy: song.requestedBy,
+    };
+    this.queue[queuePosition] = replacement;
+    console.warn(`Trying audio fallback for age-restricted YouTube track in guild ${this.guildId}: ${song.url} -> ${replacement.url}`);
+
+    try {
+      await this.play(false);
+      return true;
+    } catch (error: unknown) {
+      if (this.queue[queuePosition] === replacement) {
+        this.queue[queuePosition] = song;
+      }
+
+      throw error;
     }
   }
 

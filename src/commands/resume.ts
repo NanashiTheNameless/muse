@@ -39,6 +39,9 @@ export default class implements Command {
 
     await player.connect(targetVoiceChannel);
     await player.play();
+    if (!player.getCurrent()) {
+      throw new Error('no playable songs found');
+    }
 
     await interaction.editReply({
       content: 'Resumed playback.',
