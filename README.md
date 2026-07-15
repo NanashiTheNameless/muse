@@ -36,7 +36,7 @@ For local Node.js runs (non-Docker):
 
 ## Adding the Bot to a Server
 
-For testing you acan use my hosted instance however I ask that you self-host long term...
+For testing you can use my hosted instance however I ask that you self-host long term...  
 <https://discord.com/oauth2/authorize?client_id=1506123145571078185>
 
 The bot requires the following OAuth2 scopes and permissions:
