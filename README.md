@@ -110,6 +110,14 @@ yarn start
 
 This project requires Node.js 24.15.0 or newer.
 
+### Local validation
+
+Run the behavior suite locally with:
+
+```bash
+yarn test
+```
+
 Notes on voice ducking
 
 ---------------------

@@ -19,7 +19,8 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "yarn run typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "start": "yarn run env:set-database-url -- tsx src/scripts/migrate-and-start.ts",
     "cache:clear-key-value": "yarn run env:set-database-url tsx src/scripts/cache-clear-key-value.ts",
     "dev": "yarn run env:set-database-url -- tsx watch src/scripts/start.ts",
@@ -43,7 +44,8 @@
     "@types/ws": "8.18.1",
     "release-it": "^20.0.1",
     "type-fest": "^5.6.0",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "4.1.10"
   },
   "dependencies": {
     "@discordjs/builders": "^1.14.1",

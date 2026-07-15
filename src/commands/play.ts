@@ -85,13 +85,16 @@ export default class implements Command {
       return;
     }
 
+    let queryProtocol: string | undefined;
     try {
-      // Don't return suggestions for URLs
-      // eslint-disable-next-line no-new
-      new URL(query);
+      queryProtocol = new URL(query).protocol;
+    } catch {}
+
+    // Don't return suggestions for supported provider URLs
+    if (queryProtocol && ['http:', 'https:'].includes(queryProtocol)) {
       await this.respondToAutocomplete(interaction, []);
       return;
-    } catch {}
+    }
 
     const suggestions = await this.cache.wrap(
       getYouTubeCommandSuggestionsFor,

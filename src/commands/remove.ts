@@ -14,11 +14,13 @@ export default class implements Command {
     .addIntegerOption(option =>
       option.setName('position')
         .setDescription('Position of the song to remove [default: 1]')
+        .setMinValue(1)
         .setRequired(false),
     )
     .addIntegerOption(option =>
       option.setName('range')
         .setDescription('Number of songs to remove [default: 1]')
+        .setMinValue(1)
         .setRequired(false));
 
   private readonly playerManager: PlayerManager;
@@ -57,6 +59,10 @@ export default class implements Command {
     if (!isInstanceOwner && !hasManageGuild && !isRequesterOfAll && !isAloneInVC) {
       await interaction.reply({content: 'You can only remove your own songs. You need **Manage Server** permission to remove others\'.', flags: MessageFlags.Ephemeral});
       return;
+    }
+
+    if (position > player.queueSize()) {
+      throw new Error('position is outside the range of the queue');
     }
 
     player.removeFromQueue(position, range);

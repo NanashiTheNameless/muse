@@ -1,4 +1,5 @@
-import {promises as fs, createWriteStream} from 'fs';
+import {promises as fs, createWriteStream, WriteStream} from 'fs';
+import {randomUUID} from 'crypto';
 import path from 'path';
 import {inject, injectable} from 'inversify';
 import {TYPES} from '../types.js';
@@ -9,7 +10,7 @@ import {prisma} from '../utils/db.js';
 
 @injectable()
 export default class FileCacheProvider {
-  private static readonly evictionQueue = new PQueue({concurrency: 1});
+  private static readonly mutationQueue = new PQueue({concurrency: 1});
   private readonly config: Config;
 
   constructor(@inject(TYPES.Config) config: Config) {
@@ -65,60 +66,34 @@ export default class FileCacheProvider {
    * @param hash lookup key
    */
   createWriteStream(hash: string) {
-    const tmpPath = path.join(this.config.CACHE_DIR, 'tmp', `${hash}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 10)}`);
+    const tmpPath = path.join(this.config.CACHE_DIR, 'tmp', `${hash}.${randomUUID()}`);
     const finalPath = path.join(this.config.CACHE_DIR, hash);
 
     const stream = createWriteStream(tmpPath);
+    let finished = false;
+    let writeFailed = false;
 
-    stream.on('close', () => {
-      void (async () => {
-        try {
-          // File may already be moved/deleted by a competing writer.
-          const stats = await fs.stat(tmpPath);
+    const handleWriteError = (error: unknown) => {
+      writeFailed = true;
+      this.reportWriteError(error);
+    };
 
-          if (stats.size === 0) {
-            await fs.unlink(tmpPath).catch(() => undefined);
-            return;
-          }
+    stream.once('finish', () => {
+      finished = true;
+    });
+    stream.once('error', handleWriteError);
 
-          try {
-            await fs.rename(tmpPath, finalPath);
-          } catch (error: unknown) {
-            const code = (error as {code?: string}).code;
+    stream.once('close', () => {
+      stream.removeListener('error', handleWriteError);
 
-            // Another writer finished first. Drop our temp file and keep the winner.
-            if (code === 'EEXIST' || code === 'ENOENT') {
-              await fs.unlink(tmpPath).catch(() => undefined);
-            } else {
-              throw error;
-            }
-          }
+      const completion = finished && !writeFailed
+        ? this.finalizeWrite(hash, tmpPath, finalPath)
+        : this.removeTemporaryFile(tmpPath);
 
-          await prisma.fileCache.upsert({
-            where: {
-              hash,
-            },
-            update: {
-              accessedAt: new Date(),
-              bytes: stats.size,
-            },
-            create: {
-              hash,
-              accessedAt: new Date(),
-              bytes: stats.size,
-            },
-          });
-        } catch (error: unknown) {
-          const code = (error as {code?: string}).code;
-
-          // Expected race condition: temp file already gone.
-          if (code !== 'ENOENT') {
-            debug(`Cache write finalize failed for ${hash}: ${(error as Error).message}`);
-          }
-        } finally {
-          await this.evictOldestIfNecessary();
-        }
-      })();
+      void completion
+        .catch(error => {
+          this.reportFinalizationError(stream, error);
+        });
     });
 
     return stream;
@@ -130,14 +105,93 @@ export default class FileCacheProvider {
    * will be evicted if the cache limit has changed.
    */
   async cleanup() {
-    await this.removeOrphans();
-    await this.evictOldestIfNecessary();
+    await FileCacheProvider.mutationQueue.add(async () => {
+      await this.removeOrphans();
+      await this.evictOldest();
+    });
   }
 
-  private async evictOldestIfNecessary() {
-    void FileCacheProvider.evictionQueue.add(this.evictOldest.bind(this));
+  private async finalizeWrite(hash: string, tmpPath: string, finalPath: string) {
+    try {
+      const temporaryStats = await fs.stat(tmpPath);
 
-    return FileCacheProvider.evictionQueue.onEmpty();
+      await FileCacheProvider.mutationQueue.add(async () => {
+        if (temporaryStats.size !== 0) {
+          try {
+            // Tmp and final are on one filesystem. A hard link publishes one
+            // complete writer atomically without replacing an existing winner.
+            await fs.link(tmpPath, finalPath);
+          } catch (error: unknown) {
+            if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+              throw error;
+            }
+          }
+
+          const finalStats = await fs.stat(finalPath);
+          const accessedAt = new Date();
+          await prisma.fileCache.upsert({
+            where: {
+              hash,
+            },
+            create: {
+              hash,
+              accessedAt,
+              bytes: finalStats.size,
+            },
+            update: {
+              accessedAt,
+              bytes: finalStats.size,
+            },
+          });
+        }
+
+        // This task already owns the mutation queue; enqueueing again here
+        // would deadlock behind itself.
+        await this.evictOldest();
+      });
+    } catch (error: unknown) {
+      try {
+        await this.removeTemporaryFile(tmpPath);
+      } catch (cleanupError: unknown) {
+        const message = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+        debug(`Failed to clean up cache temporary file: ${message}`);
+      }
+
+      throw error;
+    }
+
+    await this.removeTemporaryFile(tmpPath);
+  }
+
+  private async removeTemporaryFile(tmpPath: string) {
+    try {
+      await fs.unlink(tmpPath);
+    } catch (error: unknown) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw error;
+      }
+    }
+  }
+
+  private reportFinalizationError(stream: WriteStream, error: unknown) {
+    const finalizationError = error instanceof Error ? error : new Error(String(error));
+    console.error('Failed to finalize cache write:', finalizationError);
+    debug(`Failed to finalize cache write: ${finalizationError.message}`);
+
+    if (stream.listenerCount('error') > 0) {
+      try {
+        stream.emit('error', finalizationError);
+      } catch (reportingError: unknown) {
+        const message = reportingError instanceof Error ? reportingError.message : String(reportingError);
+        debug(`Cache write error listener failed: ${message}`);
+      }
+    }
+  }
+
+  private reportWriteError(error: unknown) {
+    const writeError = error instanceof Error ? error : new Error(String(error));
+    console.error('Failed to write cache temporary file:', writeError);
+    debug(`Failed to write cache temporary file: ${writeError.message}`);
   }
 
   private async evictOldest() {
@@ -155,21 +209,18 @@ export default class FileCacheProvider {
 
       });
 
-      if (oldest) {
-        await prisma.fileCache.delete({
-          where: {
-            hash: oldest.hash,
-          },
-        });
-        await fs.unlink(path.join(this.config.CACHE_DIR, oldest.hash)).catch((error: unknown) => {
-          const code = (error as {code?: string}).code;
-          if (code !== 'ENOENT') {
-            throw error;
-          }
-        });
-        debug(`${oldest.hash} has been evicted`);
-        numOfEvictedFiles++;
+      if (!oldest) {
+        throw new Error(`Cache usage is ${totalSizeBytes} bytes, above the configured limit of ${this.config.CACHE_LIMIT_IN_BYTES} bytes, but no indexed file is available to evict`);
       }
+
+      await prisma.fileCache.delete({
+        where: {
+          hash: oldest.hash,
+        },
+      });
+      await fs.unlink(path.join(this.config.CACHE_DIR, oldest.hash));
+      debug(`${oldest.hash} has been evicted`);
+      numOfEvictedFiles++;
 
       totalSizeBytes = await this.getDiskUsageInBytes();
     }
@@ -183,6 +234,15 @@ export default class FileCacheProvider {
   }
 
   private async removeOrphans() {
+    const temporaryDirectory = path.join(this.config.CACHE_DIR, 'tmp');
+
+    for await (const dirent of await fs.opendir(temporaryDirectory)) {
+      if (dirent.isFile()) {
+        debug(`${dirent.name} was abandoned in the cache temporary directory. Removing from disk.`);
+        await fs.unlink(path.join(temporaryDirectory, dirent.name));
+      }
+    }
+
     // Check filesystem direction (do files exist on the disk but not in the database?)
     for await (const dirent of await fs.opendir(this.config.CACHE_DIR)) {
       if (dirent.isFile()) {
@@ -238,17 +298,17 @@ export default class FileCacheProvider {
    */
   private getFindAllIterable() {
     const limit = 50;
-    let previousCreatedAt: Date | null = null;
+    let previousHash: string | null = null;
 
     let models: any[] = [];
 
     const fetchNextBatch = async () => {
       let where;
 
-      if (previousCreatedAt) {
+      if (previousHash !== null) {
         where = {
-          createdAt: {
-            gt: previousCreatedAt,
+          hash: {
+            gt: previousHash,
           },
         };
       }
@@ -256,13 +316,13 @@ export default class FileCacheProvider {
       models = await prisma.fileCache.findMany({
         where,
         orderBy: {
-          createdAt: 'asc',
+          hash: 'asc',
         },
         take: limit,
       });
 
       if (models.length > 0) {
-        previousCreatedAt = models[models.length - 1].createdAt;
+        previousHash = models[models.length - 1].hash;
       }
     };
 

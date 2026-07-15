@@ -5,10 +5,12 @@ import {promises as fs} from 'fs';
 import * as Prisma from '@prisma/client';
 import {PrismaBetterSqlite3} from '@prisma/adapter-better-sqlite3';
 import {startBot} from '../index.js';
-import createDatabaseUrl, {createDatabasePath} from '../utils/create-database-url.js';
+import createDatabaseUrl, {createDatabasePathFromUrl} from '../utils/create-database-url.js';
 import {DATA_DIR} from '../services/config.js';
+import {runMigrationsAndStart} from '../utils/run-migrations-and-start.js';
 
-process.env.DATABASE_URL = process.env.DATABASE_URL ?? createDatabaseUrl(DATA_DIR);
+const databaseUrl = process.env.DATABASE_URL ?? createDatabaseUrl(DATA_DIR);
+process.env.DATABASE_URL = databaseUrl;
 
 const isRunningInContainer = async () => {
   try {
@@ -33,7 +35,7 @@ const migrateFromSequelizeToPrisma = async () => {
 
 const doesUserHaveExistingDatabase = async () => {
   try {
-    await fs.access(createDatabasePath(DATA_DIR));
+    await fs.access(createDatabasePathFromUrl(databaseUrl));
 
     return true;
   } catch {
@@ -45,7 +47,7 @@ const hasDatabaseBeenMigratedToPrisma = async () => {
   const PrismaPkg: any = Prisma as any;
   const PrismaClientCtor = PrismaPkg.PrismaClient ?? PrismaPkg.default ?? PrismaPkg;
   const client = new PrismaClientCtor({
-    adapter: new PrismaBetterSqlite3({url: process.env.DATABASE_URL}),
+    adapter: new PrismaBetterSqlite3({url: `file:${createDatabasePathFromUrl(process.env.DATABASE_URL!)}`}),
   });
 
   try {
@@ -70,7 +72,7 @@ const getFailedPrismaMigrations = async () => {
   const PrismaPkg2: any = Prisma as any;
   const PrismaClientCtor2 = PrismaPkg2.PrismaClient ?? PrismaPkg2.default ?? PrismaPkg2;
   const client = new PrismaClientCtor2({
-    adapter: new PrismaBetterSqlite3({url: process.env.DATABASE_URL}),
+    adapter: new PrismaBetterSqlite3({url: `file:${createDatabasePathFromUrl(process.env.DATABASE_URL!)}`}),
   });
 
   try {
@@ -119,8 +121,10 @@ const resolveFailedMigrations = async () => {
 
   console.log('Applying database migrations...');
 
-  if (await doesUserHaveExistingDatabase()) {
-    if (!(await hasDatabaseBeenMigratedToPrisma())) {
+  await runMigrationsAndStart({
+    databaseExists: doesUserHaveExistingDatabase,
+    hasPrismaMigrations: hasDatabaseBeenMigratedToPrisma,
+    resolveInitialMigration: async () => {
       try {
         await migrateFromSequelizeToPrisma();
       } catch (error) {
@@ -132,34 +136,33 @@ const resolveFailedMigrations = async () => {
           throw error;
         }
       }
-    }
-  }
+    },
+    deployMigrations: async () => {
+      try {
+        await resolveFailedMigrations();
+      } catch (error) {
+        if ((error as ExecaError).stderr) {
+          console.error('Failed to resolve previously failed migrations:');
+          console.error((error as ExecaError).stderr);
+          process.exit(1);
+        } else {
+          throw error;
+        }
+      }
 
-  try {
-    await resolveFailedMigrations();
-  } catch (error) {
-    if ((error as ExecaError).stderr) {
-      console.error('Failed to resolve previously failed migrations:');
-      console.error((error as ExecaError).stderr);
-      process.exit(1);
-    } else {
-      throw error;
-    }
-  }
-
-  try {
-    await execa('prisma', ['migrate', 'deploy'], {preferLocal: true});
-  } catch (error: unknown) {
-    if ((error as ExecaError).stderr) {
-      console.error('Failed to apply database migrations:');
-      console.error((error as ExecaError).stderr);
-      process.exit(1);
-    } else {
-      throw error;
-    }
-  }
-
-  console.log('Database migrations applied.');
-
-  await startBot();
+      try {
+        await execa('prisma', ['migrate', 'deploy'], {preferLocal: true});
+      } catch (error: unknown) {
+        if ((error as ExecaError).stderr) {
+          console.error('Failed to apply database migrations:');
+          console.error((error as ExecaError).stderr);
+          process.exit(1);
+        } else {
+          throw error;
+        }
+      }
+    },
+    migrationsApplied: () => console.log('Database migrations applied.'),
+    startBot,
+  });
 })();

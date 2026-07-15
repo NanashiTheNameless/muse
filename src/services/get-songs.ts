@@ -18,13 +18,19 @@ export default class {
   async getSongs(query: string, _playlistLimit: number, shouldSplitChapters: boolean): Promise<[SongMetadata[], string]> {
     const newSongs: SongMetadata[] = [];
     const extraMsg = '';
-    let url: URL;
+    let url: URL | undefined;
 
     // Test if it's a complete URL
     try {
       url = new URL(query);
     } catch {
-      // Not a URL, must search YouTube
+      url = undefined;
+    }
+
+    const supportedProtocols = ['http:', 'https:'];
+
+    if (!url || !supportedProtocols.includes(url.protocol)) {
+      // Not a supported provider URL, so search YouTube as free text.
       const songs = await this.youtubeVideoSearch(query, shouldSplitChapters);
 
       if (songs) {

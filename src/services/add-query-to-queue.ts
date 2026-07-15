@@ -15,6 +15,10 @@ import {ONE_HOUR_IN_SECONDS} from '../utils/constants.js';
 import debug from '../utils/debug.js';
 import {getSongTitle} from '../utils/song-title.js';
 
+const isSameQueueEntry = (capturedId: number | null, currentId: number | null) => (
+  capturedId !== null && capturedId === currentId
+);
+
 @injectable()
 export default class AddQueryToQueue {
   private readonly sponsorBlock?: SponsorBlock;
@@ -50,7 +54,8 @@ export default class AddQueryToQueue {
   }): Promise<void> {
     const guildId = interaction.guild!.id;
     const player = this.playerManager.get(guildId);
-    const wasPlayingSong = player.getCurrent() !== null;
+    const currentQueueEntryId = player.getCurrentQueueEntryId();
+    const wasPlayingSong = currentQueueEntryId !== null;
 
     const [targetVoiceChannel] = getMemberVoiceChannel(interaction.member as GuildMember) ?? getMostPopularVoiceChannel(interaction.guild!);
 
@@ -136,13 +141,9 @@ export default class AddQueryToQueue {
       debug(`SponsorBlock lookup finished: guild=${guildId} songs=${newSongs.length}`);
     }
 
-    // When inserting at the front one-by-one, each song lands at position 1,
-    // pushing the previous to position 2 - so iterate in reverse to preserve order.
-    const songsToAdd = addToFrontOfQueue && newSongs.length > 1 ? [...newSongs].reverse() : newSongs;
-
     // Prepare song objects but don't add to the player's queue until we've
     // successfully joined the voice channel - if join fails we must not add them.
-    const preparedSongs = songsToAdd.map(song => ({
+    const preparedSongs = newSongs.map(song => ({
       ...song,
       addedInChannelId: interaction.channel!.id,
       requestedBy: interaction.member!.user.id,
@@ -160,8 +161,8 @@ export default class AddQueryToQueue {
       debug(`Voice join finished: guild=${guildId} channel=${targetVoiceChannel.id}`);
 
       // Add songs only after successful connect
-      preparedSongs.forEach(song => {
-        player.add(song, {immediate: addToFrontOfQueue ?? false});
+      preparedSongs.forEach((song, index) => {
+        player.add(song, {immediate: addToFrontOfQueue ?? false, immediateOffset: index});
       });
 
       // Resume / start playback
@@ -177,8 +178,8 @@ export default class AddQueryToQueue {
       shouldShowPlayingEmbed = true;
     } else {
       // Already connected - add songs now.
-      preparedSongs.forEach(song => {
-        player.add(song, {immediate: addToFrontOfQueue ?? false});
+      preparedSongs.forEach((song, index) => {
+        player.add(song, {immediate: addToFrontOfQueue ?? false, immediateOffset: index});
       });
 
       if (player.status === STATUS.IDLE) {
@@ -197,9 +198,11 @@ export default class AddQueryToQueue {
       });
     }
 
-    if (skipCurrentTrack) {
+    let didSkipCurrentTrack = false;
+    if (skipCurrentTrack && isSameQueueEntry(currentQueueEntryId, player.getCurrentQueueEntryId())) {
       try {
         await player.forward(1);
+        didSkipCurrentTrack = true;
       } catch (_: unknown) {
         throw new Error('No song to skip to.');
       }
@@ -219,9 +222,9 @@ export default class AddQueryToQueue {
     }
 
     if (newSongs.length === 1) {
-      await interaction.editReply(`Added **${getSongTitle(firstSong)}** to the${addToFrontOfQueue ? ' front of the' : ''} queue${skipCurrentTrack ? ' and skipped the current track' : ''}${extraMsg}.`);
+      await interaction.editReply(`Added **${getSongTitle(firstSong)}** to the${addToFrontOfQueue ? ' front of the' : ''} queue${didSkipCurrentTrack ? ' and skipped the current track' : ''}${extraMsg}.`);
     } else {
-      await interaction.editReply(`Added **${getSongTitle(firstSong)}** and ${newSongs.length - 1} other songs to the queue${skipCurrentTrack ? ' and skipped the current track' : ''}${extraMsg}.`);
+      await interaction.editReply(`Added **${getSongTitle(firstSong)}** and ${newSongs.length - 1} other songs to the queue${didSkipCurrentTrack ? ' and skipped the current track' : ''}${extraMsg}.`);
     }
   }
 
@@ -247,7 +250,7 @@ export default class AddQueryToQueue {
           const previousSegment = acc[acc.length - 1];
           // If segments overlap merge
           if (previousSegment && previousSegment.endTime > startTime) {
-            acc[acc.length - 1].endTime = endTime;
+            acc[acc.length - 1].endTime = Math.max(previousSegment.endTime, endTime);
           } else {
             acc.push({startTime, endTime});
           }
@@ -257,14 +260,18 @@ export default class AddQueryToQueue {
 
       const intro = skipSegments[0];
       const outro = skipSegments.at(-1);
-      if (outro && outro?.endTime >= song.length - 2) {
-        song.length -= outro.endTime - outro.startTime;
+      const shouldTrimIntro = intro && intro.startTime <= 2;
+      const shouldTrimOutro = outro && outro.endTime >= song.length - 2;
+      if (shouldTrimOutro && (!shouldTrimIntro || outro !== intro)) {
+        song.length -= Math.max(0, outro.endTime - outro.startTime);
       }
 
-      if (intro?.startTime <= 2) {
-        song.offset = Math.floor(intro.endTime);
+      if (shouldTrimIntro) {
+        song.offset = Math.max(0, Math.floor(intro.endTime));
         song.length -= song.offset;
       }
+
+      song.length = Math.max(0, song.length);
 
       return song;
     } catch (e) {
