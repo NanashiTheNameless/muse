@@ -33,7 +33,7 @@ import {destroyVoiceConnection, recoverVoiceConnection} from './voice-connection
 import debug from '../utils/debug.js';
 import {getGuildSettings} from '../utils/get-guild-settings.js';
 import {buildPlayingMessageEmbed} from '../utils/build-embed.js';
-import {getYouTubeMediaSource, YtDlpMediaUnavailableError} from '../utils/yt-dlp.js';
+import {getSoundCloudMediaSource, getYouTubeMediaSource, YtDlpMediaUnavailableError} from '../utils/yt-dlp.js';
 
 export {DEFAULT_VOLUME, MediaSource, STATUS};
 export type {AgeRestrictedFallbackResolver, PlayerEvents, QueuedPlaylist, QueuedSong, SongMetadata};
@@ -922,7 +922,9 @@ export default class Player implements PlayerPublic {
     ffmpegInput = await this.fileCache.getPathFor(this.getHashForCache(song.url));
 
     if (!ffmpegInput) {
-      const mediaSource = await getYouTubeMediaSource(song.url);
+      const mediaSource = await (song.source === MediaSource.SoundCloud
+        ? getSoundCloudMediaSource(song.url)
+        : getYouTubeMediaSource(song.url));
       ffmpegInput = mediaSource.url;
 
       // Don't cache livestreams or long videos

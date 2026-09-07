@@ -15,6 +15,14 @@ export const getSongTitle = ({title, url, offset, source}: SongMetadata, shouldT
     return `[${title}](<${url}>)`;
   }
 
+  if (source === MediaSource.SoundCloud) {
+    const cleanSongTitle = cleanTitle(title);
+    const truncatedTitle = shouldTruncate ? truncate(cleanSongTitle, getMaxSongTitleLength(cleanSongTitle)) : cleanSongTitle;
+    const songTitle = truncate(truncatedTitle, 256);
+    // Keep long share parameters in the playable URL without overflowing Discord embeds.
+    return url.length > 1024 ? songTitle : `[${songTitle}](<${url}>)`;
+  }
+
   if (source === MediaSource.Arbitrary) {
     const cleanSongTitle = cleanTitle(title);
     const songTitle = shouldTruncate ? truncate(cleanSongTitle, getMaxSongTitleLength(cleanSongTitle)) : cleanSongTitle;

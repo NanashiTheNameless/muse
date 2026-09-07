@@ -27,6 +27,17 @@ interface YtDlpResponse extends YtDlpMediaDownload {
   readonly formats?: readonly YtDlpMediaDownload[];
 }
 
+export interface SoundCloudMetadata {
+  readonly title?: string;
+  readonly uploader?: string;
+  readonly artist?: string;
+  readonly duration?: number;
+  readonly webpage_url?: string;
+  readonly url?: string;
+  readonly thumbnail?: string;
+  readonly entries?: ReadonlyArray<SoundCloudMetadata | null>;
+}
+
 export interface YtDlpMediaSource {
   readonly url: string;
   readonly headers: Record<string, string>;
@@ -104,6 +115,9 @@ const getMediaUnavailableReason = (detail: string): YtDlpMediaUnavailableReason 
     /private video/i,
     /video has been removed/i,
     /members-only content/i,
+    /this track is not available/i,
+    /DRM protected/i,
+    /\[soundcloud\][\s\S]*HTTP Error (404|410)\b/i,
   ].some(pattern => pattern.test(detail))
     ? 'unavailable'
     : null;
@@ -113,8 +127,8 @@ const firstNonEmpty = (...values: Array<string | undefined>) => values
   .map(value => value?.trim())
   .find((value): value is string => Boolean(value));
 
-const withTemporaryCookies = async <T>(operation: (cookiesPath?: string) => Promise<T>): Promise<T> => {
-  const configuredCookiesPath = firstNonEmpty(process.env.YT_DLP_COOKIES_PATH);
+const withTemporaryCookies = async <T>(operation: (cookiesPath?: string) => Promise<T>, enabled = true): Promise<T> => {
+  const configuredCookiesPath = enabled ? firstNonEmpty(process.env.YT_DLP_COOKIES_PATH) : undefined;
   if (!configuredCookiesPath) {
     return operation();
   }
@@ -451,3 +465,64 @@ export const getYouTubeMediaSource = async (videoIdOrUrl: string): Promise<YtDlp
 
   throw new Error(message);
 });
+
+const getSoundCloudExtractArgs = (url: string, playlistLimit?: number) => [
+  '--dump-single-json',
+  ...(playlistLimit === undefined ? ['--no-playlist'] : ['--yes-playlist', '--flat-playlist', '--playlist-end', String(playlistLimit)]),
+  '--skip-download',
+  '--no-warnings',
+  '--no-cache-dir',
+  '--extractor-retries', '3',
+  '--retry-sleep', 'extractor:exp=2:16',
+  '--retry-sleep', 'http:exp=1:16',
+  '-f', 'bestaudio*/bestaudio/b/best',
+  '-S', 'proto:https',
+  url,
+];
+
+// SoundCloud extraction deliberately skips the YouTube config file and cookies: it
+// needs no JS runtime, and YouTube credentials must never be sent to another host.
+const extractSoundCloud = async (url: string, playlistLimit?: number): Promise<YtDlpResponse & SoundCloudMetadata> => {
+  let stdout: string;
+
+  try {
+    ({stdout} = await execa(getExecutable(), getSoundCloudExtractArgs(url, playlistLimit), {
+      timeout: YT_DLP_EXTRACT_TIMEOUT_MS,
+    }));
+  } catch (error: unknown) {
+    const detail = getExecaErrorMessage(error);
+    const message = `yt-dlp failed to extract media: ${detail}`;
+    const unavailableReason = getMediaUnavailableReason(detail);
+
+    if (unavailableReason) {
+      throw new YtDlpMediaUnavailableError(message, unavailableReason);
+    }
+
+    throw new Error(message);
+  }
+
+  try {
+    return JSON.parse(stdout) as YtDlpResponse & SoundCloudMetadata;
+  } catch {
+    throw new Error('yt-dlp returned an invalid response.');
+  }
+};
+
+export const getSoundCloudMetadata = async (url: string, playlistLimit: number): Promise<SoundCloudMetadata> => (
+  extractSoundCloud(url, Math.max(1, Math.floor(playlistLimit)))
+);
+
+export const getSoundCloudMediaSource = async (url: string): Promise<YtDlpMediaSource> => {
+  const response = await extractSoundCloud(url);
+  const download = 'entries' in response ? undefined : pickBestMediaDownload(response);
+
+  if (!download?.url) {
+    throw new Error('yt-dlp did not return a playable media URL.');
+  }
+
+  return {
+    url: download.url,
+    headers: normalizeHeaders(download.http_headers ?? response.http_headers),
+    isLive: Boolean(response.is_live ?? (response.live_status === 'is_live')),
+  };
+};

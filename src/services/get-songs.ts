@@ -6,6 +6,16 @@ import YoutubeAPI from './youtube-api.js';
 import {URL} from 'node:url';
 import getYouTubeID from '../utils/get-youtube-id.js';
 import {cleanUrl} from '../utils/url.js';
+import {getSoundCloudMetadata, YtDlpMediaUnavailableError} from '../utils/yt-dlp.js';
+import pLimit from 'p-limit';
+
+const SOUNDCLOUD_HOSTS = [
+  'soundcloud.com',
+  'www.soundcloud.com',
+  'm.soundcloud.com',
+  'on.soundcloud.com',
+  'snd.sc',
+];
 
 @injectable()
 export default class {
@@ -15,7 +25,7 @@ export default class {
     this.youtubeAPI = youtubeAPI;
   }
 
-  async getSongs(query: string, _playlistLimit: number, shouldSplitChapters: boolean): Promise<[SongMetadata[], string]> {
+  async getSongs(query: string, playlistLimit: number, shouldSplitChapters: boolean): Promise<[SongMetadata[], string]> {
     const newSongs: SongMetadata[] = [];
     const extraMsg = '';
     let url: URL | undefined;
@@ -71,6 +81,8 @@ export default class {
           throw new Error('That does not exist.');
         }
       }
+    } else if (SOUNDCLOUD_HOSTS.includes(url.host)) {
+      newSongs.push(...await this.soundCloudSource(url.href, playlistLimit));
     } else {
       const song = await this.arbitraryUrl(query);
 
@@ -94,6 +106,54 @@ export default class {
 
   private async youtubePlaylist(listId: string, shouldSplitChapters: boolean): Promise<SongMetadata[]> {
     return this.youtubeAPI.getPlaylist(listId, shouldSplitChapters);
+  }
+
+  private async soundCloudSource(url: string, playlistLimit: number): Promise<SongMetadata[]> {
+    const metadata = await getSoundCloudMetadata(url, playlistLimit);
+    const playlist = metadata.entries ? {title: metadata.title ?? 'SoundCloud playlist', source: url} : null;
+    const tracks = metadata.entries ?? [metadata];
+
+    const limit = pLimit(4);
+    const songs = await Promise.all(tracks.slice(0, playlistLimit).map(async track => limit(async () => {
+      if (!track) {
+        return [];
+      }
+
+      // Keep the page URL in the queue; signed audio URLs must be resolved at playback time.
+      const trackUrl = playlist ? track.webpage_url ?? track.url : url;
+      if (!trackUrl) {
+        return [];
+      }
+
+      // Flat SoundCloud playlist entries can contain only a URL, with no title or duration.
+      let details;
+      try {
+        details = playlist ? await getSoundCloudMetadata(trackUrl, 1) : track;
+      } catch (error: unknown) {
+        if (error instanceof YtDlpMediaUnavailableError) {
+          return [];
+        }
+
+        throw error;
+      }
+
+      if (details.entries || !details.title) {
+        return [];
+      }
+
+      return [{
+        url: trackUrl,
+        source: MediaSource.SoundCloud,
+        isLive: false,
+        title: details.title,
+        artist: details.artist ?? details.uploader ?? 'SoundCloud',
+        length: Math.max(0, details.duration ?? 0),
+        offset: 0,
+        playlist,
+        thumbnailUrl: details.thumbnail ?? null,
+      }];
+    })));
+    return songs.flat();
   }
 
   private async arbitraryUrl(url: string): Promise<SongMetadata> {

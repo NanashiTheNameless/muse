@@ -67,7 +67,7 @@ vi.mock('../src/utils/channels.js', () => ({
 import Play from '../src/commands/play.js';
 import AddQueryToQueue from '../src/services/add-query-to-queue.js';
 import Player, {MediaSource, QueuedSong, SongMetadata, STATUS} from '../src/services/player.js';
-import {getYouTubeMediaSource, YtDlpMediaUnavailableError} from '../src/utils/yt-dlp.js';
+import {getSoundCloudMediaSource, getSoundCloudMetadata, getYouTubeMediaSource, YtDlpMediaUnavailableError} from '../src/utils/yt-dlp.js';
 
 const GUILD_ID = 'guild-id';
 const ORIGINAL_YT_DLP_COOKIES_PATH = process.env.YT_DLP_COOKIES_PATH;
@@ -722,5 +722,59 @@ describe('CTRL-20 audio-idle advance preservation', () => {
       idleError,
     ]);
     expect(consoleError).toHaveBeenCalledOnce();
+  });
+});
+
+describe('PLAY-15 SoundCloud extraction', () => {
+  it('bounds collection extraction and never reads YouTube cookies', async () => {
+    process.env.YT_DLP_COOKIES_PATH = '/missing/youtube-only-cookies';
+    const metadata = {title: 'Album', entries: [{title: 'Track', url: 'https://soundcloud.com/artist/track'}]};
+    dependencyMocks.execa.mockResolvedValue({stdout: JSON.stringify(metadata)});
+
+    await expect(getSoundCloudMetadata('https://soundcloud.com/artist/sets/album', 3)).resolves.toEqual(metadata);
+
+    const args = dependencyMocks.execa.mock.calls[0][1] as string[];
+    expect(args).toEqual(expect.arrayContaining(['--flat-playlist', '--playlist-end', '3']));
+    expect(args).not.toContain('--cookies');
+    // The YouTube config file carries --no-playlist and a JS runtime SoundCloud does not need.
+    expect(args).not.toContain('--config-location');
+    expect(args.at(-1)).toBe('https://soundcloud.com/artist/sets/album');
+  });
+
+  it('resolves a single track without playlist flags', async () => {
+    dependencyMocks.execa.mockResolvedValue({stdout: VALID_MEDIA_RESPONSE});
+
+    await expect(getSoundCloudMediaSource('https://soundcloud.com/artist/track')).resolves.toEqual({
+      url: 'https://media.example/audio.webm',
+      headers: {'User-Agent': 'Muse test'},
+      isLive: false,
+    });
+
+    const args = dependencyMocks.execa.mock.calls[0][1] as string[];
+    expect(args).toContain('--no-playlist');
+    expect(args).not.toContain('--flat-playlist');
+  });
+
+  it('rejects collection results when resolving an individual audio stream', async () => {
+    dependencyMocks.execa.mockResolvedValue({stdout: JSON.stringify({entries: [], url: 'https://soundcloud.com/artist'})});
+
+    await expect(getSoundCloudMediaSource('https://soundcloud.com/artist')).rejects.toThrow('playable media URL');
+  });
+
+  it.each([
+    'ERROR: [soundcloud] 123: This video is DRM protected',
+    'ERROR: [soundcloud] artist/removed: Unable to download JSON metadata: HTTP Error 404: Not Found',
+  ])('classifies a permanent extraction failure as unplayable: %s', async stderr => {
+    dependencyMocks.execa.mockRejectedValue({stderr});
+
+    await expect(getSoundCloudMediaSource('https://soundcloud.com/artist/protected'))
+      .rejects.toBeInstanceOf(YtDlpMediaUnavailableError);
+  });
+
+  it('preserves temporary failures for retry', async () => {
+    dependencyMocks.execa.mockRejectedValue({stderr: 'ERROR: [soundcloud] 123: HTTP Error 429: Too Many Requests'});
+
+    await expect(getSoundCloudMediaSource('https://soundcloud.com/artist/track'))
+      .rejects.not.toBeInstanceOf(YtDlpMediaUnavailableError);
   });
 });

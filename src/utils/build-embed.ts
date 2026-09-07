@@ -96,8 +96,7 @@ export const buildQueueEmbed = (player: Player, page: number, pageSize: number):
       const duration = song.isLive ? 'live' : prettyTime(song.length);
 
       return `\`${songNumber}.\` ${getSongTitle(song, true)} \`[${duration}]\``;
-    })
-    .join('\n');
+    });
 
   const {artist, thumbnailUrl, playlist, requestedBy} = currentlyPlaying;
   const playlistTitle = playlist ? `(${playlist.title})` : '';
@@ -111,7 +110,16 @@ export const buildQueueEmbed = (player: Player, page: number, pageSize: number):
 
   if (player.getQueue().length > 0) {
     description += '**Up next:**\n';
-    description += queuedSongs;
+    for (const [index, song] of queuedSongs.entries()) {
+      // Leave room for a useful hint instead of rejecting the entire /queue response.
+      const overflowMessage = `… ${queuedSongs.length - index} more on this page; use a smaller page-size to view them.`;
+      if (description.length + song.length + 1 + overflowMessage.length > 4096) {
+        description += overflowMessage;
+        break;
+      }
+
+      description += `${song}\n`;
+    }
   }
 
   message

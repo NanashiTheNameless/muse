@@ -15,6 +15,7 @@ Fork maintained by NanashiTheNameless, based on work by Max Isom and other Muse 
 
 - YouTube playback with queue controls
 - Livestream playback support
+- SoundCloud tracks, share links, and playlists
 - Seeking within playable tracks
 - Local media URL resolution through yt-dlp
 - Optional SponsorBlock integration
