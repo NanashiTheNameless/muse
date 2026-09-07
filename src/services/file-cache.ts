@@ -103,7 +103,7 @@ export default class FileCacheProvider {
 
       const completion = finished && !writeFailed
         ? this.finalizeWrite(hash, tmpPath, finalPath)
-        : this.removeTemporaryFile(tmpPath);
+        : this.removeFileIfPresent(tmpPath);
 
       void completion
         .catch(error => {
@@ -204,10 +204,14 @@ export default class FileCacheProvider {
         // This task already owns the mutation queue; enqueueing again here
         // would deadlock behind itself.
         await this.evictOldest();
+
+        // Removing the temporary file inside the queued task keeps it out of a
+        // race with a cleanup task's orphan sweep.
+        await this.removeFileIfPresent(tmpPath);
       });
     } catch (error: unknown) {
       try {
-        await this.removeTemporaryFile(tmpPath);
+        await this.removeFileIfPresent(tmpPath);
       } catch (cleanupError: unknown) {
         const message = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
         debug(`Failed to clean up cache temporary file: ${message}`);
@@ -215,13 +219,11 @@ export default class FileCacheProvider {
 
       throw error;
     }
-
-    await this.removeTemporaryFile(tmpPath);
   }
 
-  private async removeTemporaryFile(tmpPath: string) {
+  private async removeFileIfPresent(filePath: string) {
     try {
-      await fs.unlink(tmpPath);
+      await fs.unlink(filePath);
     } catch (error: unknown) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
         throw error;
@@ -295,7 +297,8 @@ export default class FileCacheProvider {
     for await (const dirent of await fs.opendir(temporaryDirectory)) {
       if (dirent.isFile()) {
         debug(`${dirent.name} was abandoned in the cache temporary directory. Removing from disk.`);
-        await fs.unlink(path.join(temporaryDirectory, dirent.name));
+        // A concurrent finalization may remove its own temporary file first.
+        await this.removeFileIfPresent(path.join(temporaryDirectory, dirent.name));
       }
     }
 
@@ -310,7 +313,7 @@ export default class FileCacheProvider {
 
         if (!model) {
           debug(`${dirent.name} was present on disk but was not in the database. Removing from disk.`);
-          await fs.unlink(path.join(this.config.CACHE_DIR, dirent.name));
+          await this.removeFileIfPresent(path.join(this.config.CACHE_DIR, dirent.name));
         }
       }
     }
