@@ -418,6 +418,24 @@ const resetKeyValueCacheHarness = () => {
 };
 
 describe('KeyValueCacheProvider expiration and persistence', () => {
+  it('refreshes simultaneous expired hits without a missing-row deletion error', async () => {
+    const model = makeKeyValueCacheModel();
+    model.findUnique.mockResolvedValue({expiresAt: new Date(0), key: 'shared-key', value: '"old"'});
+    model.delete.mockResolvedValueOnce({}).mockRejectedValueOnce(Object.assign(new Error('Record to delete does not exist'), {code: 'P2025'}));
+    model.upsert.mockResolvedValue({});
+
+    try {
+      const cache = await loadKeyValueCache(model);
+      const fetchValue = vi.fn().mockResolvedValue('fresh');
+      await expect(Promise.all([
+        cache.wrap(fetchValue, {expiresIn: 60, key: 'shared-key'}),
+        cache.wrap(fetchValue, {expiresIn: 60, key: 'shared-key'}),
+      ])).resolves.toEqual(['fresh', 'fresh']);
+    } finally {
+      resetKeyValueCacheHarness();
+    }
+  });
+
   it('returns an unexpired parsed JSON hit without invoking or rewriting it', async () => {
     vi.useFakeTimers({toFake: ['Date']});
     vi.setSystemTime(new Date('2026-07-12T14:00:00.000Z'));
@@ -442,7 +460,7 @@ describe('KeyValueCacheProvider expiration and persistence', () => {
     }
   });
 
-  it('deletes an expired row before refreshing and persists the replacement JSON', async () => {
+  it('refreshes an expired row and persists the replacement JSON', async () => {
     vi.useFakeTimers({toFake: ['Date']});
     vi.setSystemTime(new Date('2026-07-12T14:00:00.000Z'));
     const model = makeKeyValueCacheModel();
@@ -454,7 +472,7 @@ describe('KeyValueCacheProvider expiration and persistence', () => {
     model.delete.mockResolvedValue({});
     model.upsert.mockResolvedValue({});
     const wrapped = vi.fn().mockImplementation(async () => {
-      expect(model.delete).toHaveBeenCalledWith({where: {key: 'expired-key'}});
+      expect(model.delete).not.toHaveBeenCalled();
       return {fresh: true};
     });
 

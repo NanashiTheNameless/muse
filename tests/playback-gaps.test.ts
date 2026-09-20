@@ -132,7 +132,7 @@ const makeReadyPlayer = () => {
 };
 
 const makeProductionStreamPlayer = () => {
-  const fileCache = {getPathFor: vi.fn().mockResolvedValue('/cached/audio.webm')};
+  const fileCache = {getEntryFor: vi.fn().mockResolvedValue({path: '/cached/audio.webm', generation: 'cached'})};
   const player = new Player(fileCache as never, GUILD_ID);
   const voiceConnection = makeVoiceConnection();
   const createReadStream = vi.fn().mockResolvedValue(Readable.from([]));
@@ -286,7 +286,7 @@ describe('PLAY-09 shuffled additions preservation', () => {
     player.add(makeQueuedSong('Current'));
     player.add(makeQueuedSong('Existing upcoming'));
     player.manualForward(1);
-    player.voiceConnection = {} as never;
+    player.voiceConnection = {state: {status: 'ready'}} as never;
     player.status = STATUS.PLAYING;
     const resolvedSongs = [makeSong('New one'), makeSong('New two'), makeSong('New three')];
     const getSongs = {getSongs: vi.fn().mockResolvedValue([resolvedSongs, ''])};
