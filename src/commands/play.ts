@@ -10,6 +10,7 @@ import {ONE_HOUR_IN_SECONDS} from '../utils/constants.js';
 import AddQueryToQueue from '../services/add-query-to-queue.js';
 import Config from '../services/config.js';
 import {getSizeWithoutBots} from '../utils/channels.js';
+import {truncate} from '../utils/string.js';
 
 @injectable()
 export default class implements Command {
@@ -110,7 +111,11 @@ export default class implements Command {
 
   private async respondToAutocomplete(interaction: AutocompleteInteraction, suggestions: {name: string; value: string | number}[]): Promise<void> {
     try {
-      await interaction.respond(suggestions);
+      const choices = suggestions
+        .filter(({name, value}) => name.length > 0 && (typeof value !== 'string' || value.length <= 100))
+        .slice(0, 25)
+        .map(choice => ({...choice, name: truncate(choice.name, 100)}));
+      await interaction.respond(choices);
     } catch (error: unknown) {
       const code = (error as {code?: number}).code;
       // Users can type quickly and invalidate an autocomplete interaction before we answer.

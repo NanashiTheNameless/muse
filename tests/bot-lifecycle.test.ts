@@ -1,5 +1,6 @@
 import 'reflect-metadata';
-import {ActivityType, ChannelType, Collection} from 'discord.js';
+import {ActivityType, ChannelType, Client, Collection} from 'discord.js';
+import {WebSocketShard} from '@discordjs/ws';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
 const mocks = vi.hoisted(() => {
@@ -23,6 +24,7 @@ const mocks = vi.hoisted(() => {
     }>,
     restPut: vi.fn(),
     restSetToken: vi.fn(),
+    reactionHandler: vi.fn(),
     settingUpsert: vi.fn(),
     spinner,
     voiceStateHandler: vi.fn(),
@@ -71,16 +73,22 @@ vi.mock('../src/events/voice-state-update.js', () => ({
   default: mocks.voiceStateHandler,
 }));
 
+vi.mock('../src/events/message-reaction-add.js', () => ({
+  default: mocks.reactionHandler,
+}));
+
 vi.mock('../src/services/player.js', () => ({
   default: class {
     readonly fileCache: unknown;
     readonly findAudioFallback: (song: unknown) => Promise<unknown>;
     readonly guildId: string;
+    readonly playingMessageUpdateIntervalSeconds: number;
 
-    constructor(fileCache: unknown, guildId: string, findAudioFallback: (song: unknown) => Promise<unknown>) {
+    constructor(fileCache: unknown, guildId: string, findAudioFallback: (song: unknown) => Promise<unknown>, playingMessageUpdateIntervalSeconds: number) {
       this.fileCache = fileCache;
       this.guildId = guildId;
       this.findAudioFallback = findAudioFallback;
+      this.playingMessageUpdateIntervalSeconds = playingMessageUpdateIntervalSeconds;
       mocks.playerConstructions.push(this);
     }
   },
@@ -166,6 +174,7 @@ const makeClient = (guildIds: string[] = []) => {
   const handlers = new Map<string, Handler>();
   const setPresence = vi.fn();
   const client = {
+    options: {},
     guilds: {
       cache: new Collection(guildIds.map(id => [id, {id}])),
     },
@@ -244,6 +253,58 @@ beforeEach(() => {
 });
 
 describe('Discord command registration and ready lifecycle', () => {
+  it('preserves configured presence on each gateway identification without registering commands twice', async () => {
+    const client = new Client({intents: []});
+    client.token = 'synthetic-test-token';
+    const connect = vi.spyOn(client.ws, 'connect').mockResolvedValue(undefined);
+    const config = {...makeConfig(true, 'https://example.test/stream'), BOT_STATUS: 'dnd' as const};
+    mocks.containerGetAll.mockReturnValue([]);
+
+    await new Bot(client, config as never).register();
+
+    expect(connect).toHaveBeenCalledOnce();
+    expect(mocks.restPut).not.toHaveBeenCalled();
+    const send = vi.fn().mockResolvedValue(undefined);
+    const shard = {
+      id: 0,
+      strategy: {
+        waitForIdentify: vi.fn().mockResolvedValue(undefined),
+        options: {
+          initialPresence: client.options.ws!.presence,
+          token: client.token,
+          shardCount: 1,
+          intents: 0,
+          identifyProperties: {},
+        },
+      },
+      send,
+      debug: vi.fn(),
+      on: vi.fn(),
+      off: vi.fn(),
+      waitForEvent: vi.fn().mockResolvedValue(undefined),
+    };
+    // Use the pinned gateway client's real Identify serializer, with no network.
+    const identify = (WebSocketShard.prototype as unknown as {identify: () => Promise<void>}).identify;
+    await identify.call(shard);
+    await identify.call(shard);
+
+    expect(send).toHaveBeenCalledTimes(2);
+    for (const [packet] of send.mock.calls) {
+      expect(packet).toMatchObject({op: 2, d: {presence: {
+        status: 'online',
+        activities: [{name: 'https://github.com/NanashiTheNameless/muse', type: ActivityType.Streaming, url: 'https://github.com/NanashiTheNameless/muse'}],
+      }}});
+    }
+
+    client.user = {id: 'application-id', setPresence: vi.fn()} as never;
+    client.emit('clientReady', client as never);
+    await vi.waitFor(() => expect(client.user!.setPresence).toHaveBeenCalledOnce());
+    client.emit('clientReady', client as never);
+    expect(mocks.restPut).toHaveBeenCalledOnce();
+    expect(client.user!.setPresence).toHaveBeenCalledOnce();
+    client.removeAllListeners();
+  });
+
   it('replaces global commands with the full command set in bot registration mode', async () => {
     const {commands, handlers, setPresence} = await registerBot(true, makeCommandSet(), ['guild-a', 'guild-b']);
 
@@ -287,7 +348,7 @@ describe('Discord command registration and ready lifecycle', () => {
       }],
       status: 'online',
     });
-    expect(consoleLog).toHaveBeenCalledWith('Ready! Invite the bot with https://discord.com/oauth2/authorize?client_id=application-id&permissions=274914626560&scope=bot%20applications.commands');
+    expect(consoleLog).toHaveBeenCalledWith('Ready! Invite the bot with https://discord.com/oauth2/authorize?client_id=application-id&permissions=274914700352&scope=bot%20applications.commands');
     consoleLog.mockRestore();
   });
 
@@ -316,6 +377,16 @@ describe('Discord command registration and ready lifecycle', () => {
     expect(consoleError).toHaveBeenCalledWith(clientError);
     expect(mocks.debug).toHaveBeenCalledWith('gateway trace');
     consoleError.mockRestore();
+  });
+
+  it('routes message reactions through the music-control boundary', async () => {
+    const {handlers} = await registerBot(true);
+    const reaction = {emoji: {name: '⏯️'}};
+    const user = {bot: false, id: 'member-id'};
+
+    await invoke(handlers, 'messageReactionAdd', reaction, user);
+
+    expect(mocks.reactionHandler).toHaveBeenCalledWith(reaction, user);
   });
 });
 
@@ -453,7 +524,9 @@ describe('per-guild Player isolation', () => {
   it('reuses one Player within a guild and creates a separate Player for another guild', async () => {
     const fileCache = {kind: 'fake cache'};
     const youtubeAPI = {findAudioFallback: vi.fn().mockResolvedValue({title: 'fallback'})};
-    const manager = new PlayerManager(fileCache as never, youtubeAPI as never);
+    const manager = new PlayerManager(fileCache as never, youtubeAPI as never, {
+      PLAYING_MESSAGE_UPDATE_INTERVAL_SECONDS: 7,
+    } as never);
 
     const guildA = manager.get('guild-a');
     const guildAAgain = manager.get('guild-a');
@@ -463,6 +536,7 @@ describe('per-guild Player isolation', () => {
     expect(guildB).not.toBe(guildA);
     expect(mocks.playerConstructions.map(player => player.guildId)).toEqual(['guild-a', 'guild-b']);
     expect(mocks.playerConstructions.every(player => player.fileCache === fileCache)).toBe(true);
+    expect(mocks.playerConstructions.every(player => player.playingMessageUpdateIntervalSeconds === 7)).toBe(true);
 
     const song = {title: 'restricted'};
     await mocks.playerConstructions[0].findAudioFallback(song);

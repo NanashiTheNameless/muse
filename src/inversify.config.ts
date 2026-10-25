@@ -37,6 +37,7 @@ import Skip from './commands/skip.js';
 import Stop from './commands/stop.js';
 import Unskip from './commands/unskip.js';
 import Volume from './commands/volume.js';
+import Help from './commands/help.js';
 import FileCacheProvider from './services/file-cache.js';
 import KeyValueCacheProvider from './services/key-value-cache.js';
 
@@ -87,6 +88,7 @@ container.bind<YoutubeAPI>(TYPES.Services.YoutubeAPI).to(YoutubeAPI).inSingleton
   Stop,
   Unskip,
   Volume,
+  Help,
 ].forEach(command => {
   container.bind<Command>(TYPES.Command).to(command).inSingletonScope();
 });

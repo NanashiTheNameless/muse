@@ -7,6 +7,7 @@ import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
 const dependencyMocks = vi.hoisted(() => ({
   arrayShuffle: vi.fn((items: unknown[]) => items),
+  buildQueueEmbed: vi.fn(() => ({title: 'queue'})),
   buildPlayingMessageEmbed: vi.fn(() => ({title: 'playing'})),
   createAudioPlayer: vi.fn(),
   createAudioResource: vi.fn(),
@@ -52,6 +53,7 @@ vi.mock('../src/services/file-cache.js', () => ({
 }));
 
 vi.mock('../src/utils/build-embed.js', () => ({
+  buildQueueEmbed: dependencyMocks.buildQueueEmbed,
   buildPlayingMessageEmbed: dependencyMocks.buildPlayingMessageEmbed,
 }));
 
@@ -280,7 +282,7 @@ describe('PLAY-06 autocomplete preservation', () => {
 });
 
 describe('PLAY-09 shuffled additions preservation', () => {
-  it('shuffles only the resolved batch while existing history, current entry, and upcoming queue stay unchanged', async () => {
+  it.each([false, true])('shuffles only the resolved batch and removes duplicates (duplicate: %s)', async duplicate => {
     const player = new Player({} as never, GUILD_ID);
     player.add(makeQueuedSong('History'));
     player.add(makeQueuedSong('Current'));
@@ -289,7 +291,8 @@ describe('PLAY-09 shuffled additions preservation', () => {
     player.voiceConnection = {state: {status: 'ready'}} as never;
     player.status = STATUS.PLAYING;
     const resolvedSongs = [makeSong('New one'), makeSong('New two'), makeSong('New three')];
-    const getSongs = {getSongs: vi.fn().mockResolvedValue([resolvedSongs, ''])};
+    const inputSongs = duplicate ? [...resolvedSongs, {...resolvedSongs[0], title: 'Duplicate title'}] : resolvedSongs;
+    const getSongs = {getSongs: vi.fn().mockResolvedValue([inputSongs, ''])};
     const playerManager = {get: vi.fn(() => player)};
     const cache = {wrap: vi.fn()};
     const service = new AddQueryToQueue(
@@ -369,8 +372,14 @@ describe('PLAY-13 private cookie-copy preservation', () => {
         fs.readFile(temporaryCookiesPath, 'utf8'),
       ]);
       expect(temporaryCookiesPath).not.toBe(sourcePath);
-      expect(directoryStats.mode & 0o777).toBe(0o700);
-      expect(fileStats.mode & 0o777).toBe(0o600);
+      // Windows implements chmod as a compatibility no-op and does not report
+      // POSIX permission bits. Keep the security assertions on POSIX while
+      // still exercising private-copy creation and cleanup on Windows.
+      if (process.platform !== 'win32') {
+        expect(directoryStats.mode & 0o777).toBe(0o700);
+        expect(fileStats.mode & 0o777).toBe(0o600);
+      }
+
       expect(contents).toBe('private-cookie-bytes');
       return {stdout: VALID_MEDIA_RESPONSE};
     });
@@ -668,7 +677,7 @@ describe('CTRL-20 audio-idle advance preservation', () => {
     expect(player.getPosition()).toBe(0);
     expect(player.status).toBe(STATUS.PLAYING);
     expect(getStream).toHaveBeenCalledTimes(2);
-    expect(getStream).toHaveBeenLastCalledWith(repeated, {seek: 0, to: 100});
+    expect(getStream).toHaveBeenLastCalledWith(repeated, {seek: 0, to: 100}, expect.objectContaining({song: repeated}));
   });
 
   it('re-adds each naturally completed entry so queue loop cycles in order', async () => {

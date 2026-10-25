@@ -4,6 +4,7 @@ import {injectable} from 'inversify';
 import path from 'path';
 import xbytes from 'xbytes';
 import {ConditionalKeys} from 'type-fest';
+import {DEFAULT_PLAYING_MESSAGE_UPDATE_INTERVAL_SECONDS} from '../utils/constants.js';
 dotenv.config({path: process.env.ENV_FILE ?? path.resolve(process.cwd(), '.env')});
 
 export const DATA_DIR = path.resolve(process.env.DATA_DIR ? process.env.DATA_DIR : './data');
@@ -21,6 +22,9 @@ const CONFIG_MAP = {
   CACHE_LIMIT_IN_BYTES: xbytes.parseSize(process.env.CACHE_LIMIT ?? '2GB'),
   ENABLE_SPONSORBLOCK: process.env.ENABLE_SPONSORBLOCK === 'true',
   SPONSORBLOCK_TIMEOUT: parseInt(process.env.SPONSORBLOCK_TIMEOUT ?? '5', 10),
+  PLAYING_MESSAGE_UPDATE_INTERVAL_SECONDS: Number(
+    process.env.PLAYING_MESSAGE_UPDATE_INTERVAL_SECONDS ?? DEFAULT_PLAYING_MESSAGE_UPDATE_INTERVAL_SECONDS,
+  ),
   YT_DLP_PATH: firstNonEmpty(process.env.YT_DLP_PATH, process.env.MUSE_BUNDLED_YT_DLP_PATH) ?? 'yt-dlp',
   YT_DLP_AUTO_UPDATE: process.env.YT_DLP_AUTO_UPDATE !== 'false',
   YT_DLP_COOKIES_PATH: process.env.YT_DLP_COOKIES_PATH ?? '',
@@ -37,6 +41,7 @@ export default class Config {
   readonly CACHE_LIMIT_IN_BYTES!: number;
   readonly ENABLE_SPONSORBLOCK!: boolean;
   readonly SPONSORBLOCK_TIMEOUT!: number;
+  readonly PLAYING_MESSAGE_UPDATE_INTERVAL_SECONDS!: number;
   readonly YT_DLP_PATH!: string;
   readonly YT_DLP_AUTO_UPDATE!: boolean;
   readonly YT_DLP_COOKIES_PATH!: string;
@@ -50,6 +55,11 @@ export default class Config {
       }
 
       if (typeof value === 'number') {
+        if (key === 'PLAYING_MESSAGE_UPDATE_INTERVAL_SECONDS'
+          && (!Number.isInteger(value) || value < 1)) {
+          throw new Error('Invalid numeric value for PLAYING_MESSAGE_UPDATE_INTERVAL_SECONDS: value must be a positive whole number');
+        }
+
         if (!Number.isFinite(value)) {
           throw new Error(`Invalid numeric value for ${key}`);
         }

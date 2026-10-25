@@ -1,19 +1,21 @@
 import {ChatInputCommandInteraction, GuildMember, MessageFlags, PermissionFlagsBits, PermissionsBitField} from 'discord.js';
 import {inject, injectable} from 'inversify';
 import shuffle from 'array-shuffle';
+import uniqueSongs from '../utils/unique-songs.js';
 import {TYPES} from '../types.js';
 import GetSongs from '../services/get-songs.js';
-import {MediaSource, SongMetadata, STATUS} from './player.js';
+import Player, {MediaSource, type PlayingMessageTerminalState, SongMetadata, STATUS} from './player.js';
 import PlayerManager from '../managers/player.js';
-import {buildPlayingMessageEmbed} from '../utils/build-embed.js';
+import {buildQueueEmbed} from '../utils/build-embed.js';
 import {getMemberVoiceChannel, getMostPopularVoiceChannel} from '../utils/channels.js';
 import {getGuildSettings} from '../utils/get-guild-settings.js';
 import {SponsorBlock} from 'sponsorblock-api';
 import Config from './config.js';
 import KeyValueCacheProvider from './key-value-cache.js';
-import {ONE_HOUR_IN_SECONDS} from '../utils/constants.js';
+import {MUSIC_CONTROL_EMOJIS, ONE_HOUR_IN_SECONDS} from '../utils/constants.js';
 import debug from '../utils/debug.js';
 import {getSongTitle} from '../utils/song-title.js';
+import formatSongReply from '../utils/format-song-reply.js';
 
 const isSameQueueEntry = (capturedId: number | null, currentId: number | null) => (
   capturedId !== null && capturedId === currentId
@@ -61,7 +63,7 @@ export default class AddQueryToQueue {
 
     const settings = await getGuildSettings(guildId);
 
-    const {playlistLimit} = settings;
+    const {playlistLimit, defaultQueuePageSize = 10} = settings;
 
     await interaction.deferReply();
     await interaction.editReply('Looking that up...');
@@ -132,7 +134,7 @@ export default class AddQueryToQueue {
     }
 
     if (shuffleAdditions) {
-      newSongs = shuffle(newSongs);
+      newSongs = shuffle(uniqueSongs(newSongs));
     }
 
     if (this.config.ENABLE_SPONSORBLOCK) {
@@ -181,21 +183,14 @@ export default class AddQueryToQueue {
       }
 
       shouldShowPlayingEmbed = true;
-    } else {
-      if (player.status === STATUS.IDLE) {
-        // Player is idle, start playback instead
-        await player.play();
-      }
+    } else if (player.status === STATUS.IDLE) {
+      // Player is idle, start playback instead
+      await player.play();
+      shouldShowPlayingEmbed = true;
     }
 
     if (!player.getCurrent()) {
       throw new Error('no playable songs found');
-    }
-
-    if (shouldShowPlayingEmbed) {
-      await interaction.editReply({
-        embeds: [buildPlayingMessageEmbed(player)],
-      });
     }
 
     let didSkipCurrentTrack = false;
@@ -208,23 +203,102 @@ export default class AddQueryToQueue {
       }
     }
 
-    // Build response message
-    if (statusMsg !== '') {
-      if (extraMsg === '') {
-        extraMsg = statusMsg;
-      } else {
-        extraMsg = `${statusMsg}, ${extraMsg}`;
-      }
-    }
-
+    extraMsg = [statusMsg, extraMsg].filter(Boolean).join(', ');
     if (extraMsg !== '') {
       extraMsg = ` (${extraMsg})`;
     }
 
-    if (newSongs.length === 1) {
-      await interaction.editReply(`Added **${getSongTitle(firstSong)}** to the${addToFrontOfQueue ? ' front of the' : ''} queue${didSkipCurrentTrack ? ' and skipped the current track' : ''}${extraMsg}.`);
-    } else {
-      await interaction.editReply(`Added **${getSongTitle(firstSong)}** and ${newSongs.length - 1} other songs to the queue${didSkipCurrentTrack ? ' and skipped the current track' : ''}${extraMsg}.`);
+    const responseContent = newSongs.length === 1
+      ? formatSongReply(getSongTitle(firstSong), 'Added **', `** to the${addToFrontOfQueue ? ' front of the' : ''} queue${didSkipCurrentTrack ? ' and skipped the current track' : ''}${extraMsg}.`)
+      : formatSongReply(getSongTitle(firstSong), 'Added **', `** and ${newSongs.length - 1} other songs to the queue${didSkipCurrentTrack ? ' and skipped the current track' : ''}${extraMsg}.`);
+
+    if (!shouldShowPlayingEmbed) {
+      await interaction.editReply(responseContent);
+      return;
+    }
+
+    await this.sendPlayingMessage({
+      interaction,
+      player,
+      content: responseContent,
+      pageSize: defaultQueuePageSize,
+      ephemeral: false,
+    });
+  }
+
+  /** Attach a single live response to the session, using the appropriate Discord edit API. */
+  private async sendPlayingMessage({interaction, player, content, pageSize, ephemeral}: {
+    interaction: ChatInputCommandInteraction;
+    player: Player;
+    content: string;
+    pageSize: number;
+    ephemeral: boolean;
+  }): Promise<void> {
+    const guildId = interaction.guild!.id;
+    // The queue embed supplies both the progress timer and the upcoming list
+    // for the live response associated with this playback session.
+    const responsePromise = interaction.editReply({
+      content,
+      embeds: [buildQueueEmbed(player, 1, pageSize)],
+    });
+    let finishControls!: () => void;
+    const controlsFinished = new Promise<void>(resolve => {
+      finishControls = resolve;
+    });
+    const updatePlayingMessage = async (terminalState?: PlayingMessageTerminalState) => {
+      // Capture before yielding: stop() can clear the queue while Discord is pending.
+      const update = terminalState === 'stopped'
+        ? {content: 'Playback stopped.', embeds: []}
+        : terminalState === 'finished'
+          ? {content, embeds: []}
+          : {embeds: [buildQueueEmbed(player, 1, pageSize)]};
+      const response = await responsePromise;
+
+      // Public interaction responses become regular channel messages and can
+      // use Message.edit. Ephemeral responses must remain on the interaction webhook.
+      try {
+        if (ephemeral) {
+          await interaction.editReply(update);
+        } else {
+          await response.edit(update);
+        }
+      } finally {
+        if (terminalState && !ephemeral) {
+          // Wait for any pending addition, without delaying the terminal text.
+          // Clear controls even if Discord rejected the final message edit.
+          await controlsFinished;
+          await response.reactions.removeAll().catch(error => {
+            console.warn(`Could not remove music controls for guild ${guildId}:`, error);
+          });
+        }
+      }
+    };
+
+    // Register before Discord publishes the response so stop/finish cannot be lost.
+    player.setPlayingMessageUpdater(updatePlayingMessage);
+
+    try {
+      const response = await responsePromise;
+      if (ephemeral || !player.setPlayingMessageId(updatePlayingMessage, response.id)) {
+        return;
+      }
+
+      // Add controls sequentially so Discord displays them in transport order.
+      for (const emoji of MUSIC_CONTROL_EMOJIS) {
+        if (!player.isPlayingMessage(response.id)) {
+          break;
+        }
+
+        try {
+          // Reaction order is part of the transport-control layout.
+          // eslint-disable-next-line no-await-in-loop
+          await response.react(emoji);
+        } catch (error: unknown) {
+          console.warn(`Could not add music control ${emoji} for guild ${guildId}:`, error);
+        }
+      }
+    } finally {
+      finishControls();
     }
   }
 

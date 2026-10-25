@@ -14,6 +14,7 @@ const CONFIG_ENV_KEYS = [
   'ENABLE_SPONSORBLOCK',
   'ENV_FILE',
   'MUSE_BUNDLED_YT_DLP_PATH',
+  'PLAYING_MESSAGE_UPDATE_INTERVAL_SECONDS',
   'REGISTER_COMMANDS_ON_BOT',
   'SPONSORBLOCK_TIMEOUT',
   'SPOTIFY_CLIENT_ID',
@@ -152,6 +153,7 @@ describe('OPS-01 environment and config loading', () => {
     const {default: Config} = await loadConfig({
       DISCORD_TOKEN: 'discord-secret',
       ENABLE_SPONSORBLOCK: 'TRUE',
+      PLAYING_MESSAGE_UPDATE_INTERVAL_SECONDS: '9',
       REGISTER_COMMANDS_ON_BOT: 'true',
       SPONSORBLOCK_TIMEOUT: '17',
       YOUTUBE_API_KEY: 'youtube-secret',
@@ -163,6 +165,7 @@ describe('OPS-01 environment and config loading', () => {
     expect(config.ENABLE_SPONSORBLOCK).toBe(false);
     expect(config.YT_DLP_AUTO_UPDATE).toBe(true);
     expect(config.SPONSORBLOCK_TIMEOUT).toBe(17);
+    expect(config.PLAYING_MESSAGE_UPDATE_INTERVAL_SECONDS).toBe(9);
 
     const invalidModule = await loadConfig({
       DISCORD_TOKEN: 'discord-secret',
@@ -171,6 +174,19 @@ describe('OPS-01 environment and config loading', () => {
     });
     expect(() => new invalidModule.default()).toThrow('Invalid numeric value for SPONSORBLOCK_TIMEOUT');
   });
+
+  it.each(['0', '-1', '1.5', 'not-a-number'])(
+    'rejects invalid playback response interval %s',
+    async interval => {
+      const {default: Config} = await loadConfig({
+        DISCORD_TOKEN: 'discord-secret',
+        PLAYING_MESSAGE_UPDATE_INTERVAL_SECONDS: interval,
+        YOUTUBE_API_KEY: 'youtube-secret',
+      });
+
+      expect(() => new Config()).toThrow(/PLAYING_MESSAGE_UPDATE_INTERVAL_SECONDS.*positive whole number/);
+    },
+  );
 
   it('uses the default data/cache paths and two-gigabyte cache limit', async () => {
     const {default: Config, DATA_DIR} = await loadConfig({
@@ -286,6 +302,7 @@ const loadStartHarness = async ({failAt}: StartHarnessOptions = {}) => {
     default: {get: containerGet},
   }));
   vi.doMock('../src/utils/prepare-yt-dlp.js', () => ({default: prepareYtDlp}));
+  vi.doMock('../src/utils/prepare-runtime-tools.js', () => ({default: vi.fn(async () => { events.push('runtime'); })}));
 
   const {startBot} = await import('../src/index.js');
 
@@ -312,6 +329,7 @@ describe('OPS-02 startup ordering and short-circuiting', () => {
       'mkdir:tmp',
       'cleanup',
       'prepare',
+      'runtime',
       'register',
     ]);
     await expect(fs.stat(harness.dataDirectory)).resolves.toMatchObject({});
@@ -327,7 +345,7 @@ describe('OPS-02 startup ordering and short-circuiting', () => {
     {failAt: 'mkdir:tmp', expected: ['mkdir:data', 'mkdir:cache', 'mkdir:tmp']},
     {failAt: 'cleanup', expected: ['mkdir:data', 'mkdir:cache', 'mkdir:tmp', 'cleanup']},
     {failAt: 'prepare', expected: ['mkdir:data', 'mkdir:cache', 'mkdir:tmp', 'cleanup', 'prepare']},
-    {failAt: 'register', expected: ['mkdir:data', 'mkdir:cache', 'mkdir:tmp', 'cleanup', 'prepare', 'register']},
+    {failAt: 'register', expected: ['mkdir:data', 'mkdir:cache', 'mkdir:tmp', 'cleanup', 'prepare', 'runtime', 'register']},
   ])('stops after a rejected $failAt stage', async ({failAt, expected}) => {
     const harness = await loadStartHarness({failAt});
 

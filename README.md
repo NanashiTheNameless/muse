@@ -52,6 +52,9 @@ The bot requires the following OAuth2 scopes and permissions:
 | Send Messages | Respond to commands |
 | Send Messages in Threads | Respond to commands in threads |
 | Embed Links | Now-playing and queue embeds |
+| Read Message History | Read playback control reactions |
+| Add Reactions | Add playback controls |
+| Manage Messages | Clear control reactions so they can be clicked again |
 | Connect | Join voice channels |
 | Speak | Play audio in voice channels |
 | Use Voice Activity | Required for voice channel operation |
@@ -59,10 +62,10 @@ The bot requires the following OAuth2 scopes and permissions:
 Use this URL, replacing `YOUR_CLIENT_ID` with your bot's application ID from the [Discord Developer Portal](https://discord.com/developers/applications):
 
 ```text
-https://discord.com/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=274914626560&scope=bot%20applications.commands
+https://discord.com/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=274914700352&scope=bot%20applications.commands
 ```
 
-The permission integer `274914626560` encodes exactly the seven permissions above - no administrator or unrelated permissions are requested.
+The permission integer `274914700352` encodes exactly the ten permissions above - no administrator or unrelated permissions are requested.
 
 ## Quick Start (Docker)
 
@@ -119,6 +122,80 @@ Run the behavior suite locally with:
 yarn test
 ```
 
+### Playback display and controls
+
+The `/play` message shows the current song, progress bar, and upcoming songs
+with nearly real-time updates (configurable). The timer updates every five
+seconds by default. To change this, set `PLAYING_MESSAGE_UPDATE_INTERVAL_SECONDS`
+in your `.env` file to a whole number of seconds greater than zero, then restart
+Muse.
+
+When the queue finishes, Muse removes the card and controls and keeps the
+original queue acknowledgment. Stopping playback shows "Playback stopped."
+Volume and loop changes update the card immediately, including while paused.
+Long titles, source labels, and stream URLs are shortened for display when needed
+to fit Discord messages; playback uses the full URL.
+
+To use the emoji controls, you must be in the same voice channel as Muse and
+be allowed to use the matching command in the text channel containing the
+message. Being a listener does not grant extra permissions. You can change who
+can use commands and where under **Server Settings > Integrations > Muse**.
+Muse checks permissions each time you click a control. If it cannot check them,
+it ignores the click. Next-track reactions follow the same requester privileges
+and majority vote rules as `/next`; repeat reactions do not add duplicate votes.
+
+| Control | Command you need permission to use |
+| --- | --- |
+| Previous Track | `/unskip` |
+| Next Track | `/next` |
+| Rewind | `/seek` |
+| Fast-forward | `/fseek` |
+| Pause / Resume | `/pause` while playing; `/resume` while paused |
+| Stop | `/stop` |
+| Shuffle | `/shuffle` |
+
+Rewind and fast-forward move ten seconds within a song and do not work on
+livestreams. Playback responses are public so other listeners can use the controls.
+
+Shuffling removes repeated songs from the upcoming queue, including songs
+that are playing now or have already played. When you add a playlist with
+shuffle enabled, Muse removes repeats within that playlist. Different chapters
+of the same track stay separate.
+
+YouTube playlist imports stop once they have enough playable tracks for
+`/config set-playlist-limit`. Private and deleted entries do not count toward
+that limit; each split chapter counts as one track. Video-detail requests are
+limited to three at a time across imports and lookups. This reduces request
+bursts, but your YouTube API project's daily quota still applies.
+
+### Favorites
+
+A favorite is a named search or track/playlist URL saved for this server. It
+stores the input you would give `/play`, not audio or a copy of the current
+queue. Anyone in the server who can use `/favorites use` can queue that saved
+input again.
+
+For example, create one with `/favorites create name:lofi query:lofi hip hop`,
+then use `/favorites use name:lofi` to play it. Use `/favorites list` to see the
+server's favorites and `/favorites remove name:lofi` to remove one you created.
+The server owner can also remove other users' favorites.
+
+Favorite names must contain 1–100 characters. `/favorites list` may shorten long
+names and queries for display; the saved query is still used in full. Existing
+names longer than 100 characters can still be entered manually with
+`/favorites use` or `/favorites remove`.
+
+### Leaving voice when the queue ends
+
+`/config set-wait-after-queue-empties` takes a whole number of **seconds**.
+For example, `delay:60` makes Muse wait 60 seconds after the queue ends before
+leaving voice. Set `delay:0` to never leave because the queue is empty.
+The separate `/config set-leave-if-no-listeners` setting can still make Muse
+leave when everyone else leaves the channel.
+
+Use `/help` in Discord for the command list and these usage examples. Its reply
+is visible only to you.
+
 Notes on voice ducking
 
 ---------------------
@@ -146,6 +223,7 @@ Core paths and cache:
 
 Bot behavior:
 
+- `PLAYING_MESSAGE_UPDATE_INTERVAL_SECONDS` (positive whole seconds, default: `5`)
 - `REGISTER_COMMANDS_ON_BOT` (`true`/`false`, default: `false`)
 
 SponsorBlock:

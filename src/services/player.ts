@@ -4,7 +4,9 @@ import {setTimeout as sleep} from 'timers/promises';
 import {hashSync as hasha} from 'hasha';
 import {WriteStream} from 'fs-capacitor';
 import ffmpeg from 'fluent-ffmpeg';
+import prismMedia from 'prism-media';
 import shuffle from 'array-shuffle';
+import uniqueSongs from '../utils/unique-songs.js';
 import {
   AudioPlayer,
   AudioPlayerState,
@@ -34,11 +36,19 @@ import {destroyVoiceConnection, recoverVoiceConnection} from './voice-connection
 import debug from '../utils/debug.js';
 import {getGuildSettings} from '../utils/get-guild-settings.js';
 import {buildPlayingMessageEmbed} from '../utils/build-embed.js';
-import {getSoundCloudMediaSource, getYouTubeMediaSource, YtDlpMediaUnavailableError} from '../utils/yt-dlp.js';
+import {getSoundCloudMediaSource, getYouTubeMediaSource, YtDlpMediaUnavailableError, type YtDlpMediaSource} from '../utils/yt-dlp.js';
+import {Setting} from '@prisma/client';
+import {DEFAULT_PLAYING_MESSAGE_UPDATE_INTERVAL_SECONDS} from '../utils/constants.js';
 
 export {DEFAULT_VOLUME, MediaSource, STATUS};
 export type {AgeRestrictedFallbackResolver, PlayerEvents, QueuedPlaylist, QueuedSong, SongMetadata};
 
+const FFMPEG_STARTUP_TIMEOUT_MS = 20_000;
+const MAX_MEDIA_AVAILABILITY_WAIT_MS = 60_000;
+// Fresh YouTube URLs can return 403 for several seconds before the same URL starts working.
+const MEDIA_FORBIDDEN_RETRY_DELAYS_MS = [5_000, 10_000];
+const PREFETCH_LEAD_SECONDS = 60;
+const PREFETCH_MAX_AGE_MS = 10 * 60 * 1000;
 const VOICE_CONNECTION_ATTEMPTS = 3;
 const VOICE_CONNECTION_ATTEMPT_TIMEOUT_MS = 20_000;
 
@@ -52,7 +62,56 @@ const sanitizeFfmpegError = (error: unknown) => {
     .slice(0, 500);
 };
 
+const getMediaIdentifierForLog = (song: QueuedSong) => (
+  song.source === MediaSource.Youtube && /^[\w-]{11}$/.test(song.url)
+    ? `youtube=${song.url}`
+    : `sourceHash=${hasha(song.url).slice(0, 16)}`
+);
+
+export class FfmpegMediaUnavailableError extends Error {
+  constructor(error: unknown, public readonly reason: 'invalid-output' | 'not-found' | 'unavailable' = 'unavailable') {
+    const detail = sanitizeFfmpegError(error);
+    super(`FFmpeg could not start audio transcoding${detail ? `: ${detail}` : ''}`);
+    this.name = 'FfmpegMediaUnavailableError';
+  }
+}
+
+export class FfmpegStartupError extends Error {
+  constructor(error: unknown, public readonly forbidden = false) {
+    const detail = sanitizeFfmpegError(error);
+    super(`FFmpeg could not initialize audio transcoding${detail ? `: ${detail}` : ''}`);
+    this.name = 'FfmpegStartupError';
+  }
+}
+
+const getFfmpegStartupError = (error: unknown) => {
+  const detail = error instanceof Error ? error.message : String(error);
+  const isInvalidOutput = /Invalid data found when processing input/i.test(detail);
+  const isNotFound = /(?:HTTP error|Server returned) (?:404|410)|404 Not Found|410 Gone/i.test(detail);
+  const isForbidden = /(?:HTTP error|Server returned) 403|403 Forbidden/i.test(detail);
+
+  if (isInvalidOutput) {
+    return new FfmpegMediaUnavailableError(error, 'invalid-output');
+  }
+
+  if (isNotFound) {
+    return new FfmpegMediaUnavailableError(error, 'not-found');
+  }
+
+  return new FfmpegStartupError(error, isForbidden);
+};
+
 type PlayerPlaybackAttemptContext = PlaybackAttemptContext<QueuedSong, VoiceConnection>;
+export type PlayingMessageTerminalState = 'finished' | 'stopped';
+type PlayingMessageUpdater = (terminalState?: PlayingMessageTerminalState) => Promise<void>;
+type PlayingMessageState = {
+  updater: PlayingMessageUpdater;
+  id?: string;
+  terminalState?: PlayingMessageTerminalState;
+  updateInFlight: boolean;
+  updateQueued: boolean;
+  retired: boolean;
+};
 
 export interface PlayerPublic {
   getPosition(): number;
@@ -91,12 +150,16 @@ export default class Player implements PlayerPublic {
   private skipVotes = new Set<string>();
   private unexpectedIdleSongUrl: string | null = null;
   private unexpectedIdleRetries = 0;
+  private playingMessage?: PlayingMessageState;
+  private secondsSincePlayingMessageUpdate = 0;
+  private readonly playingMessageUpdateIntervalSeconds: number;
 
   private positionInSeconds = 0;
   private readonly fileCache: FileCacheProvider;
   private readonly ageRestrictedFallbackResolver?: AgeRestrictedFallbackResolver;
   private disconnectTimer: NodeJS.Timeout | null = null;
   private shouldIgnoreNextIdleEvent = false;
+  private prefetchedMedia?: {song: QueuedSong; fetchedAt: number; mediaSource: Promise<YtDlpMediaSource | null>};
 
   private readonly channelToSpeakingUsers: Map<string, Set<string>> = new Map();
   private volumeBeforeVoiceActivity?: number;
@@ -125,10 +188,16 @@ export default class Player implements PlayerPublic {
   private speakingEma: Map<string, number> = new Map();
   private speakingEndTimeouts: Map<string, NodeJS.Timeout> = new Map();
 
-  constructor(fileCache: FileCacheProvider, guildId: string, ageRestrictedFallbackResolver?: AgeRestrictedFallbackResolver) {
+  constructor(
+    fileCache: FileCacheProvider,
+    guildId: string,
+    ageRestrictedFallbackResolver?: AgeRestrictedFallbackResolver,
+    playingMessageUpdateIntervalSeconds = DEFAULT_PLAYING_MESSAGE_UPDATE_INTERVAL_SECONDS,
+  ) {
     this.fileCache = fileCache;
     this.guildId = guildId;
     this.ageRestrictedFallbackResolver = ageRestrictedFallbackResolver;
+    this.playingMessageUpdateIntervalSeconds = playingMessageUpdateIntervalSeconds;
     this.playbackAttempts = new PlaybackAttemptTracker(() => ({
       currentSong: this.getCurrent(),
       queueEntryVersion: this.getCurrentQueueEntryId(),
@@ -176,6 +245,7 @@ export default class Player implements PlayerPublic {
   disconnect(): void {
     this.voiceConnectionGeneration++;
     this.pendingConnection = undefined;
+    this.prefetchedMedia = undefined;
     this.playbackAttempts.invalidate();
     this.voiceActivitySessionGeneration++;
 
@@ -219,9 +289,14 @@ export default class Player implements PlayerPublic {
     }
   }
 
-  async seek(positionSeconds: number): Promise<void> {
+  async seek(positionSeconds: number, {preservePausedState = false} = {}): Promise<void> {
     const attempt = this.playbackAttempts.begin();
-    await this.seekWithAttempt(positionSeconds, attempt);
+    const stayPaused = preservePausedState && this.status === STATUS.PAUSED;
+    try {
+      await this.seekWithAttempt(positionSeconds, attempt, stayPaused);
+    } finally {
+      this.requestPlayingMessageUpdate();
+    }
   }
 
   async forwardSeek(positionSeconds: number): Promise<void> {
@@ -230,6 +305,43 @@ export default class Player implements PlayerPublic {
 
   getPosition(): number {
     return this.positionInSeconds;
+  }
+
+  /**
+   * Registers the renderer for the live response created when /play starts a
+   * playback session. Older responses can still finish their terminal edits.
+   */
+  setPlayingMessageUpdater(updater: PlayingMessageUpdater, messageId?: string): void {
+    this.playingMessage = {
+      updater,
+      id: messageId,
+      updateInFlight: false,
+      updateQueued: false,
+      retired: false,
+    };
+    this.secondsSincePlayingMessageUpdate = 0;
+  }
+
+  /** Binds a published response only while its renderer still owns the session. */
+  setPlayingMessageId(updater: PlayingMessageUpdater, messageId: string): boolean {
+    const message = this.playingMessage;
+    if (!message || message.updater !== updater || message.terminalState !== undefined) {
+      return false;
+    }
+
+    message.id = messageId;
+    return true;
+  }
+
+  /** Returns whether a reaction belongs to this player's current response. */
+  isPlayingMessage(messageId: string): boolean {
+    // Retire controls as soon as playback ends, even if the final edit is pending.
+    return this.playingMessage?.terminalState === undefined && this.playingMessage?.id === messageId;
+  }
+
+  /** Requests an immediate render after an externally initiated control. */
+  refreshPlayingMessage(): void {
+    this.requestPlayingMessageUpdate();
   }
 
   async play(allowAgeRestrictedFallback = true): Promise<void> {
@@ -274,6 +386,7 @@ export default class Player implements PlayerPublic {
     }
 
     this.stopTrackingPosition();
+    this.requestPlayingMessageUpdate();
   }
 
   async forward(skip: number): Promise<void> {
@@ -282,10 +395,13 @@ export default class Player implements PlayerPublic {
       throw new Error('Invalid number of songs to skip.');
     }
 
+    const originalPosition = this.positionInSeconds;
     const originalQueuePosition = this.queuePosition;
+    const originalSong = this.getCurrent();
     const originalQueueEntryVersion = this.currentQueueEntryVersion;
     this.manualForward(skip);
     const destinationSong = this.getCurrent();
+    const destinationQueuePosition = this.queuePosition;
     const destinationQueueEntryVersion = this.currentQueueEntryVersion;
     let destinationPlayback: PlayerPlaybackAttemptContext | null = null;
 
@@ -307,15 +423,20 @@ export default class Player implements PlayerPublic {
         await playPromise;
       }
     } catch (error: unknown) {
-      const failedTransitionStillOwnsDestination = this.getCurrent() === destinationSong
+      const canRestoreOriginalEntry = this.getCurrent() === destinationSong
+        && this.queuePosition === destinationQueuePosition
+        && this.queue[originalQueuePosition] === originalSong
         && this.currentQueueEntryVersion === destinationQueueEntryVersion
         && (destinationPlayback === null || this.playbackAttempts.owns(destinationPlayback));
-      if (failedTransitionStillOwnsDestination) {
+      if (canRestoreOriginalEntry) {
+        this.positionInSeconds = originalPosition;
         this.queuePosition = originalQueuePosition;
         this.currentQueueEntryVersion = originalQueueEntryVersion;
       }
 
       throw error;
+    } finally {
+      this.requestPlayingMessageUpdate();
     }
   }
 
@@ -471,18 +592,54 @@ export default class Player implements PlayerPublic {
   }
 
   async back(): Promise<void> {
-    if (this.canGoBack()) {
-      this.queuePosition--;
-      this.currentQueueEntryVersion++;
-      this.positionInSeconds = 0;
-      this.stopTrackingPosition();
-      this.skipVotes = new Set();
-
-      if (this.status !== STATUS.PAUSED) {
-        await this.play();
-      }
-    } else {
+    if (!this.canGoBack()) {
       throw new Error('No songs in queue to go back to.');
+    }
+
+    const originalPosition = this.positionInSeconds;
+    const originalQueuePosition = this.queuePosition;
+    const originalSong = this.getCurrent();
+    const originalQueueEntryVersion = this.currentQueueEntryVersion;
+    this.skipVotes = new Set();
+    this.queuePosition--;
+    this.currentQueueEntryVersion++;
+    this.positionInSeconds = 0;
+    this.stopTrackingPosition();
+    const destinationSong = this.getCurrent();
+    const destinationQueuePosition = this.queuePosition;
+    const destinationQueueEntryVersion = this.currentQueueEntryVersion;
+    let destinationPlayback: PlayerPlaybackAttemptContext | null = null;
+
+    try {
+      if (this.status !== STATUS.PAUSED) {
+        const playPromise = this.play();
+        const destinationConnection = this.voiceConnection;
+        if (destinationConnection && destinationSong) {
+          destinationPlayback = this.playbackAttempts.capture(
+            this.playbackAttempts.latest(),
+            destinationSong,
+            destinationQueueEntryVersion,
+            destinationConnection,
+          );
+        }
+
+        await playPromise;
+      }
+    } catch (error: unknown) {
+      const canRestoreOriginalEntry = this.getCurrent() === destinationSong
+        && this.queuePosition === destinationQueuePosition
+        && this.queue[originalQueuePosition] === originalSong
+        && this.currentQueueEntryVersion === destinationQueueEntryVersion
+        && (destinationPlayback === null || this.playbackAttempts.owns(destinationPlayback));
+      if (canRestoreOriginalEntry) {
+        this.positionInSeconds = originalPosition;
+        this.queuePosition = originalQueuePosition;
+        this.currentQueueEntryVersion = originalQueueEntryVersion;
+      }
+
+      throw error;
+    } finally {
+      this.requestPlayingMessageUpdate();
     }
   }
 
@@ -529,12 +686,16 @@ export default class Player implements PlayerPublic {
     if (this.getCurrent() !== currentSong) {
       this.currentQueueEntryVersion++;
     }
+
+    this.requestPlayingMessageUpdate();
   }
 
   shuffle(): void {
-    const shuffledSongs = shuffle(this.queue.slice(this.queuePosition + 1));
+    const historyAndCurrent = this.queue.slice(0, this.queuePosition + 1);
+    const shuffledSongs = shuffle(uniqueSongs(this.getQueue(), historyAndCurrent));
 
-    this.queue = [...this.queue.slice(0, this.queuePosition + 1), ...shuffledSongs];
+    this.queue = [...historyAndCurrent, ...shuffledSongs];
+    this.requestPlayingMessageUpdate();
   }
 
   clear(): void {
@@ -549,15 +710,18 @@ export default class Player implements PlayerPublic {
 
     this.queuePosition = 0;
     this.queue = newQueue;
+    this.requestPlayingMessageUpdate();
   }
 
   removeFromQueue(index: number, amount = 1): void {
     this.queue.splice(this.queuePosition + index, amount);
+    this.requestPlayingMessageUpdate();
   }
 
   removeCurrent(): void {
     this.queue = [...this.queue.slice(0, this.queuePosition), ...this.queue.slice(this.queuePosition + 1)];
     this.currentQueueEntryVersion++;
+    this.requestPlayingMessageUpdate();
   }
 
   queueSize(): number {
@@ -573,6 +737,12 @@ export default class Player implements PlayerPublic {
     this.queuePosition = 0;
     this.queue = [];
     this.currentQueueEntryVersion++;
+    // Serialize a terminal edit behind any progress edit already in flight.
+    if (this.playingMessage) {
+      this.playingMessage.terminalState = 'stopped';
+    }
+
+    this.requestPlayingMessageUpdate();
   }
 
   move(from: number, to: number): QueuedSong {
@@ -581,6 +751,7 @@ export default class Player implements PlayerPublic {
     }
 
     this.queue.splice(this.queuePosition + to, 0, this.queue.splice(this.queuePosition + from, 1)[0]);
+    this.requestPlayingMessageUpdate();
 
     return this.queue[this.queuePosition + to];
   }
@@ -591,6 +762,7 @@ export default class Player implements PlayerPublic {
     const clamped = Math.max(0, Math.min(100, safe));
     this.volume = clamped;
     this.setAudioPlayerVolume(clamped);
+    this.requestPlayingMessageUpdate();
   }
 
   getVolume(): number {
@@ -693,7 +865,7 @@ export default class Player implements PlayerPublic {
     }
   }
 
-  private async seekWithAttempt(positionSeconds: number, attempt: PlaybackAttemptToken): Promise<void> {
+  private async seekWithAttempt(positionSeconds: number, attempt: PlaybackAttemptToken, stayPaused = false): Promise<void> {
     this.status = STATUS.PAUSED;
 
     const currentSong = this.getCurrent();
@@ -726,6 +898,20 @@ export default class Player implements PlayerPublic {
       throw new Error('Seek position is outside the range of the song.');
     }
 
+    if (stayPaused) {
+      // A buffering AudioPlayer cannot be paused. Keep only the new resume
+      // position and let play() recreate the resource when playback is wanted.
+      // Ownership was checked above, before retiring the current resource.
+      this.stopTrackingPosition();
+      this.stopAudioPlayer(true);
+      this.audioPlayer = null;
+      this.audioResource = null;
+      this.positionInSeconds = positionSeconds;
+      this.nowPlaying = currentSong;
+      this.nowPlayingQueueEntryVersion = currentQueueEntryVersion;
+      return;
+    }
+
     let realPositionSeconds = positionSeconds;
     let to: number | undefined;
     if (currentSong.offset !== undefined) {
@@ -733,7 +919,26 @@ export default class Player implements PlayerPublic {
       to = currentSong.length + currentSong.offset;
     }
 
-    const stream = await this.getStream(currentSong, {seek: realPositionSeconds, to});
+    const previousPosition = this.positionInSeconds;
+    this.stopTrackingPosition();
+    let stream: Readable | null;
+    try {
+      stream = await this.getStream(currentSong, {seek: realPositionSeconds, to}, playback);
+    } catch (error: unknown) {
+      if (this.playbackAttempts.owns(playback)) {
+        this.positionInSeconds = previousPosition;
+        this.audioPlayer = null;
+        this.audioResource = null;
+      }
+
+      await this.handlePlaybackError(error, playback, true);
+      return;
+    }
+
+    if (!stream) {
+      return;
+    }
+
     if (!this.playbackAttempts.owns(playback)) {
       this.destroyStaleStream(stream);
       return;
@@ -820,6 +1025,8 @@ export default class Player implements PlayerPublic {
       }
     }
 
+    const previousPosition = this.positionInSeconds;
+    this.stopTrackingPosition();
     try {
       let positionSeconds: number | undefined;
       let to: number | undefined;
@@ -828,7 +1035,11 @@ export default class Player implements PlayerPublic {
         to = currentSong.length + currentSong.offset;
       }
 
-      const stream = await this.getStream(currentSong, {seek: positionSeconds, to});
+      const stream = await this.getStream(currentSong, {seek: positionSeconds, to}, playback);
+      if (!stream) {
+        return;
+      }
+
       if (!this.playbackAttempts.owns(playback)) {
         this.destroyStaleStream(stream);
         return;
@@ -849,6 +1060,13 @@ export default class Player implements PlayerPublic {
       this.nowPlayingQueueEntryVersion = currentQueueEntryVersion;
       this.startTrackingPosition(0);
     } catch (error: unknown) {
+      if (this.playbackAttempts.owns(playback)) {
+        this.positionInSeconds = previousPosition;
+        this.status = STATUS.PAUSED;
+        this.audioPlayer = null;
+        this.audioResource = null;
+      }
+
       await this.handlePlaybackError(
         error,
         playback,
@@ -884,9 +1102,9 @@ export default class Player implements PlayerPublic {
       }
     }
 
-    if (error instanceof YtDlpMediaUnavailableError || isGone) {
+    if (error instanceof YtDlpMediaUnavailableError || error instanceof FfmpegMediaUnavailableError || isGone) {
       const detail = error instanceof Error ? error.message : 'media returned HTTP 410';
-      console.warn(`Skipping unplayable YouTube track for guild ${this.guildId}: ${detail}`);
+      console.warn(`Skipping unplayable track for guild ${this.guildId} (${getMediaIdentifierForLog(playback.song)}): ${sanitizeFfmpegError(detail)}`);
       await this.advancePastUnplayableTrack();
       return;
     }
@@ -954,7 +1172,15 @@ export default class Player implements PlayerPublic {
     return headers;
   }
 
-  private async getStream(song: QueuedSong, options: {seek?: number; to?: number} = {}): Promise<Readable> {
+  private async getStream(
+    song: QueuedSong,
+    options: {seek?: number; to?: number} = {},
+    playback?: PlayerPlaybackAttemptContext,
+  ): Promise<Readable | null> {
+    if (playback && !this.playbackAttempts.owns(playback)) {
+      return null;
+    }
+
     if (this.status === STATUS.PLAYING) {
       debug('getStream: stopping existing audio player to replace stream', {status: this.status, nowPlaying: this.nowPlaying?.url});
       this.stopAudioPlayer();
@@ -990,6 +1216,15 @@ export default class Player implements PlayerPublic {
       return this.createReadStream({url: song.url, cacheKey: song.url, ffmpegInputOptions});
     }
 
+    return this.getCachedOrRemoteStream(song, options, playback);
+  }
+
+  private async getCachedOrRemoteStream(
+    song: QueuedSong,
+    options: {seek?: number; to?: number},
+    playback?: PlayerPlaybackAttemptContext,
+  ): Promise<Readable | null> {
+    const isCurrent = () => !playback || this.playbackAttempts.owns(playback);
     let ffmpegInput: string | null;
     const ffmpegInputOptions: string[] = [];
     let shouldCacheVideo = false;
@@ -999,12 +1234,23 @@ export default class Player implements PlayerPublic {
     const cacheKey = JSON.stringify(['audio-v2', song.source, song.url, options.to ?? null]);
     const cacheHash = this.getHashForCache(cacheKey);
     const cachedEntry = await this.fileCache.getEntryFor(cacheHash);
+    if (!isCurrent()) {
+      return null;
+    }
+
     ffmpegInput = cachedEntry?.path ?? null;
 
     if (!ffmpegInput) {
-      const mediaSource = await (song.source === MediaSource.SoundCloud
-        ? getSoundCloudMediaSource(song.url)
-        : getYouTubeMediaSource(song.url));
+      let mediaSource = await this.takePrefetchedMediaSource(song);
+      if (!isCurrent()) {
+        return null;
+      }
+
+      mediaSource ??= await this.fetchMediaSource(song);
+      if (!isCurrent()) {
+        return null;
+      }
+
       ffmpegInput = mediaSource.url;
 
       // Don't cache livestreams or long videos
@@ -1024,6 +1270,12 @@ export default class Player implements PlayerPublic {
 
       const headerOptions = this.buildFfmpegHeaderOptions(mediaSource.headers);
       ffmpegInputOptions.push(...headerOptions);
+
+      await this.waitForMediaAvailability(mediaSource.availableAt);
+    }
+
+    if (!isCurrent()) {
+      return null;
     }
 
     if (options.seek) {
@@ -1034,12 +1286,31 @@ export default class Player implements PlayerPublic {
       ffmpegInputOptions.push('-to', options.to.toString());
     }
 
-    return this.createReadStream({
+    const readStreamOptions = {
       url: ffmpegInput,
       cacheKey,
       ffmpegInputOptions,
       cache: shouldCacheVideo,
-    });
+    };
+
+    try {
+      return await (cachedEntry
+        ? this.createReadStream(readStreamOptions)
+        : this.createRemoteReadStream(readStreamOptions, isCurrent));
+    } catch (error: unknown) {
+      if (!isCurrent()) {
+        return null;
+      }
+
+      if (cachedEntry
+        && error instanceof FfmpegMediaUnavailableError
+        && error.reason === 'invalid-output') {
+        await this.fileCache.invalidate(cacheHash, cachedEntry.generation);
+        return this.getStream(song, options, playback);
+      }
+
+      throw error;
+    }
   }
 
   private startTrackingPosition(initalPosition?: number): void {
@@ -1053,7 +1324,102 @@ export default class Player implements PlayerPublic {
 
     this.playPositionInterval = setInterval(() => {
       this.positionInSeconds++;
+      this.secondsSincePlayingMessageUpdate++;
+      // Reuse the playback clock so paused and idle time never trigger edits.
+      if (this.secondsSincePlayingMessageUpdate >= this.playingMessageUpdateIntervalSeconds) {
+        this.secondsSincePlayingMessageUpdate = 0;
+        this.requestPlayingMessageUpdate();
+      }
+
+      this.prefetchNextSongIfDue();
     }, 1000);
+  }
+
+  /**
+   * Serializes edits for each response. Replaced responses may finish their
+   * terminal update, but must not render progress from the new session.
+   */
+  private requestPlayingMessageUpdate(message = this.playingMessage): void {
+    if (!message || message.retired
+      || (message !== this.playingMessage && message.terminalState === undefined)) {
+      return;
+    }
+
+    if (message === this.playingMessage) {
+      this.secondsSincePlayingMessageUpdate = 0;
+    }
+
+    if (message.updateInFlight) {
+      message.updateQueued = true;
+      return;
+    }
+
+    message.updateInFlight = true;
+    const {terminalState} = message;
+    void message.updater(terminalState)
+      .then(() => {
+        if (terminalState && message.terminalState === terminalState) {
+          // Terminal responses no longer receive timer edits or controls.
+          message.retired = true;
+          if (this.playingMessage === message) {
+            this.playingMessage = undefined;
+          }
+        }
+      })
+      .catch((error: unknown) => {
+        // A failed old response must not retire the new session's response.
+        message.retired = true;
+        if (this.playingMessage === message) {
+          this.playingMessage = undefined;
+        }
+
+        const detail = error instanceof Error ? `${error.name}: ${error.message}` : error;
+        console.warn(`Could not update playing message for guild ${this.guildId}: ${sanitizeFfmpegError(detail)}`);
+      })
+      .finally(() => {
+        message.updateInFlight = false;
+        if (message.updateQueued) {
+          message.updateQueued = false;
+          this.requestPlayingMessageUpdate(message);
+        }
+      });
+  }
+
+  private async fetchMediaSource(song: QueuedSong): Promise<YtDlpMediaSource> {
+    return song.source === MediaSource.SoundCloud
+      ? getSoundCloudMediaSource(song.url)
+      : getYouTubeMediaSource(song.url);
+  }
+
+  // Resolving early lets any yt-dlp available_at wait elapse while the current song plays.
+  private prefetchNextSongIfDue(): void {
+    const current = this.getCurrent();
+    const next = this.queue[this.queuePosition + 1];
+    if (!current || !next || this.loopCurrentSong || this.prefetchedMedia?.song === next) {
+      return;
+    }
+
+    if (next.source === MediaSource.HLS || next.source === MediaSource.Arbitrary || next.isLive || current.length - this.positionInSeconds > PREFETCH_LEAD_SECONDS) {
+      return;
+    }
+
+    const mediaSource = this.fetchMediaSource(next).catch((error: unknown) => {
+      debug(`Prefetch failed for guild ${this.guildId}: ${sanitizeFfmpegError(error)}`);
+      return null;
+    });
+    this.prefetchedMedia = {song: next, fetchedAt: Date.now(), mediaSource};
+  }
+
+  private async takePrefetchedMediaSource(song: QueuedSong): Promise<YtDlpMediaSource | null> {
+    const prefetched = this.prefetchedMedia;
+    if (!prefetched || prefetched.song !== song) {
+      return null;
+    }
+
+    this.prefetchedMedia = undefined;
+    const mediaSource = await prefetched.mediaSource;
+
+    return Date.now() - prefetched.fetchedAt <= PREFETCH_MAX_AGE_MS ? mediaSource : null;
   }
 
   private stopTrackingPosition(): void {
@@ -1272,6 +1638,12 @@ export default class Player implements PlayerPublic {
     this.stopTrackingPosition();
     this.status = STATUS.IDLE;
     this.stopAudioPlayer(true);
+    // Let the response restore its original acknowledgment after the queue empties.
+    if (this.playingMessage) {
+      this.playingMessage.terminalState = 'finished';
+    }
+
+    this.requestPlayingMessageUpdate();
 
     const settings = await getGuildSettings(this.guildId);
 
@@ -1299,17 +1671,166 @@ export default class Player implements PlayerPublic {
     return ['-headers', `${headerLines}\r\n`];
   }
 
+  private async waitForMediaAvailability(availableAt?: number) {
+    if (typeof availableAt !== 'number' || !Number.isFinite(availableAt)) {
+      return;
+    }
+
+    // The available_at value has one-second resolution, so pad by a second to avoid an early request.
+    const waitMs = Math.min((availableAt * 1000) + 1000 - Date.now(), MAX_MEDIA_AVAILABILITY_WAIT_MS);
+    if (waitMs <= 0) {
+      return;
+    }
+
+    console.log(`Waiting ${Math.ceil(waitMs / 1000)}s for media to become available for guild ${this.guildId}, as required by the site.`);
+    await sleep(waitMs);
+  }
+
+  private async createRemoteReadStream(
+    options: {url: string; cacheKey: string; ffmpegInputOptions?: string[]; cache?: boolean},
+    isCurrent: () => boolean,
+  ): Promise<Readable | null> {
+    for (const delayMs of MEDIA_FORBIDDEN_RETRY_DELAYS_MS) {
+      // Stop, seek, or a newer play request can retire this attempt during a wait.
+      if (!isCurrent()) {
+        return null;
+      }
+
+      try {
+        // Retries must run sequentially so each one follows the wait.
+        // eslint-disable-next-line no-await-in-loop
+        return await this.createReadStream(options);
+      } catch (error: unknown) {
+        if (!isCurrent()) {
+          return null;
+        }
+
+        if (!(error instanceof FfmpegStartupError && error.forbidden)) {
+          throw error;
+        }
+
+        console.warn(`Media URL returned 403 Forbidden for guild ${this.guildId}, retrying in ${delayMs / 1000}s.`);
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(delayMs);
+      }
+    }
+
+    return isCurrent() ? this.createReadStream(options) : null;
+  }
+
   private async createReadStream(options: {url: string; cacheKey: string; ffmpegInputOptions?: string[]; cache?: boolean}): Promise<Readable> {
     return new Promise((resolve, reject) => {
       const capacitor = new WriteStream();
+      const startupProbeStream = capacitor.createReadStream();
+      const opusProbe = new prismMedia.opus.WebmDemuxer();
+      let cacheReadStream: Readable | undefined;
+      let cacheWriteStream: ReturnType<FileCacheProvider['createWriteStream']> | undefined;
 
       if (options?.cache) {
-        const cacheStream = this.fileCache.createWriteStream(this.getHashForCache(options.cacheKey));
-        capacitor.createReadStream().pipe(cacheStream);
+        cacheWriteStream = this.fileCache.createWriteStream(this.getHashForCache(options.cacheKey));
+        cacheReadStream = capacitor.createReadStream();
+        cacheReadStream.pipe(cacheWriteStream, {end: false});
       }
 
       const returnedStream = capacitor.createReadStream();
+      let cacheWriteAborted = false;
+      let cacheReadEnded = false;
+      let ffmpegEnded = false;
       let hasReturnedStreamClosed = false;
+      let startupSettled = false;
+      let startupTimedOut = false;
+      let startupTimeout: NodeJS.Timeout | undefined;
+
+      const cleanupStartupListeners = () => {
+        if (startupTimeout) {
+          clearTimeout(startupTimeout);
+          startupTimeout = undefined;
+        }
+
+        opusProbe.off('data', onPlayablePacket);
+        startupProbeStream.off('end', onEndBeforePlayablePacket);
+      };
+
+      const destroyCacheWrite = () => {
+        if (cacheWriteAborted) {
+          return;
+        }
+
+        cacheWriteAborted = true;
+        cacheReadStream?.destroy();
+        cacheWriteStream?.destroy();
+      };
+
+      const finalizeCacheWriteIfComplete = () => {
+        if (!cacheWriteAborted
+          && cacheReadEnded
+          && ffmpegEnded
+          && cacheWriteStream
+          && !cacheWriteStream.writableEnded) {
+          cacheWriteStream.end();
+        }
+      };
+
+      const rejectStartup = (error: unknown) => {
+        if (startupSettled) {
+          return;
+        }
+
+        startupSettled = true;
+        cleanupStartupListeners();
+        destroyCacheWrite();
+        startupProbeStream.destroy();
+        opusProbe.destroy();
+        returnedStream.destroy();
+        capacitor.destroy();
+        reject(error instanceof FfmpegMediaUnavailableError || error instanceof FfmpegStartupError
+          ? error
+          : new FfmpegStartupError(error));
+      };
+
+      const onPlayablePacket = () => {
+        if (startupSettled) {
+          return;
+        }
+
+        startupSettled = true;
+        cleanupStartupListeners();
+        startupProbeStream.destroy();
+        opusProbe.destroy();
+        resolve(returnedStream);
+      };
+
+      const onEndBeforePlayablePacket = () => {
+        if (ffmpegEnded) {
+          rejectStartup(new FfmpegMediaUnavailableError(
+            new Error('FFmpeg produced no playable Opus audio.'),
+            'invalid-output',
+          ));
+        }
+      };
+
+      const onFfmpegEnd = () => {
+        ffmpegEnded = true;
+        finalizeCacheWriteIfComplete();
+        if (startupProbeStream.readableEnded) {
+          onEndBeforePlayablePacket();
+        }
+      };
+
+      const onBufferError = (error: unknown) => {
+        if (!startupSettled) {
+          rejectStartup(new FfmpegStartupError(error));
+          return;
+        }
+
+        console.error(`Playback buffer failed after playback began for guild ${this.guildId}: ${sanitizeFfmpegError(error)}`);
+        destroyCacheWrite();
+      };
+
+      const onCacheWriteError = (error: unknown) => {
+        console.warn(`Disabling cache write for guild ${this.guildId}: ${sanitizeFfmpegError(error)}`);
+        destroyCacheWrite();
+      };
 
       const stream = ffmpeg(options.url)
         .inputOptions(options?.ffmpegInputOptions ?? ['-re'])
@@ -1317,13 +1838,52 @@ export default class Player implements PlayerPublic {
         .audioCodec('libopus')
         .outputFormat('webm')
         .on('error', error => {
-          if (!hasReturnedStreamClosed) {
-            reject(error);
+          destroyCacheWrite();
+
+          if (hasReturnedStreamClosed) {
+            return;
+          }
+
+          if (!startupSettled) {
+            rejectStartup(getFfmpegStartupError(error));
+            return;
+          }
+
+          console.error(`FFmpeg stream failed after playback began for guild ${this.guildId}: ${sanitizeFfmpegError(error)}`);
+          if (!capacitor.writableEnded) {
+            capacitor.end();
           }
         })
-        .on('start', command => {
-          debug(`Spawned ffmpeg with ${command}`);
-        });
+        .on('start', () => {
+          if (startupTimedOut) {
+            stream.kill('SIGKILL');
+            return;
+          }
+
+          debug('Spawned ffmpeg for playback');
+        })
+        .on('end', onFfmpegEnd);
+
+      capacitor.on('error', onBufferError);
+      startupProbeStream.on('error', onBufferError);
+      returnedStream.on('error', onBufferError);
+      opusProbe.on('error', onBufferError);
+      cacheReadStream?.on('error', onCacheWriteError);
+      cacheReadStream?.once('end', () => {
+        cacheReadEnded = true;
+        finalizeCacheWriteIfComplete();
+      });
+      cacheWriteStream?.on('error', onCacheWriteError);
+      opusProbe.once('data', onPlayablePacket);
+      startupProbeStream.once('end', onEndBeforePlayablePacket);
+      startupProbeStream.pipe(opusProbe);
+      startupTimeout = setTimeout(() => {
+        startupTimedOut = true;
+        stream.kill('SIGKILL');
+        rejectStartup(new FfmpegStartupError(
+          new Error(`FFmpeg produced no playable audio within ${FFMPEG_STARTUP_TIMEOUT_MS / 1000} seconds.`),
+        ));
+      }, FFMPEG_STARTUP_TIMEOUT_MS);
 
       stream.pipe(capacitor);
 
@@ -1334,8 +1894,6 @@ export default class Player implements PlayerPublic {
 
         hasReturnedStreamClosed = true;
       });
-
-      resolve(returnedStream);
     });
   }
 

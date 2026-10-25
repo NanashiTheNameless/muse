@@ -3,6 +3,15 @@ import Player, {STATUS, PlayerPublic} from '../services/player.js';
 import getProgressBar from './get-progress-bar.js';
 import {prettyTime} from './time.js';
 import {getSongTitle} from './song-title.js';
+import {truncate} from './string.js';
+
+const setBoundedFooter = (message: EmbedBuilder, text: string) => {
+  const {title = '', description = '', fields = []} = message.data;
+  const contentLength = title.length + description.length
+    + fields.reduce((total, field) => total + field.name.length + field.value.length, 0);
+  // Discord also limits the combined text of an embed to 6000 characters.
+  message.setFooter({text: truncate(text, Math.min(2048, 6000 - contentLength))});
+};
 
 const getQueueInfo = (player: Player) => {
   const queueSize = player.queueSize();
@@ -23,7 +32,7 @@ const getPlayerUI = (player: PlayerPublic) => {
   const rawPosition = player.getPosition();
   const position = Math.max(0, Math.min(rawPosition, song.length));
   const indicator = player.status === STATUS.PLAYING ? '[playing]' : '[stopped]';
-  const progressBar = getProgressBar(10, position / song.length);
+  const progressBar = getProgressBar(91, position / song.length);
   const elapsedTime = song.isLive ? 'live' : `${prettyTime(position)}/${prettyTime(song.length)}`;
   const loop = player.loopCurrentSong ? '[loop-song]' : player.loopCurrentQueue ? '[loop-queue]' : '';
   let vol: string;
@@ -58,8 +67,8 @@ export const buildPlayingMessageEmbed = (player: Player): EmbedBuilder => {
       **${getSongTitle(currentlyPlaying)}**
       Requested by: <@${requestedBy}>\n
       ${getPlayerUI(player)}
-    `)
-    .setFooter({text: `Source: ${artist}`});
+    `);
+  setBoundedFooter(message, `Source: ${artist}`);
 
   if (thumbnailUrl) {
     message.setThumbnail(thumbnailUrl);
@@ -128,8 +137,8 @@ export const buildQueueEmbed = (player: Player, page: number, pageSize: number):
     .setDescription(description)
     .addFields([{name: 'In queue', value: getQueueInfo(player), inline: true}, {
       name: 'Total length', value: `${totalLength > 0 ? prettyTime(totalLength) : '-'}`, inline: true,
-    }, {name: 'Page', value: `${page} out of ${maxQueuePage}`, inline: true}])
-    .setFooter({text: `Source: ${artist} ${playlistTitle}`});
+    }, {name: 'Page', value: `${page} out of ${maxQueuePage}`, inline: true}]);
+  setBoundedFooter(message, `Source: ${artist} ${playlistTitle}`);
 
   if (thumbnailUrl) {
     message.setThumbnail(thumbnailUrl);

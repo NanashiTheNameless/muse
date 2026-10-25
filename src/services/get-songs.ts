@@ -65,7 +65,8 @@ export default class {
       // If a playlist param is present, treat the URL as a playlist even when a video id is also present.
       if (url.searchParams.get('list')) {
         // YouTube playlist
-        newSongs.push(...await this.youtubePlaylist(url.searchParams.get('list')!, shouldSplitChapters));
+        const songs = await this.youtubePlaylist(url.searchParams.get('list')!, shouldSplitChapters, playlistLimit);
+        newSongs.push(...songs.slice(0, playlistLimit));
       } else {
         const videoId = getYouTubeID(cleanedUrl);
 
@@ -104,8 +105,8 @@ export default class {
     return this.youtubeAPI.getVideo(url, shouldSplitChapters);
   }
 
-  private async youtubePlaylist(listId: string, shouldSplitChapters: boolean): Promise<SongMetadata[]> {
-    return this.youtubeAPI.getPlaylist(listId, shouldSplitChapters);
+  private async youtubePlaylist(listId: string, shouldSplitChapters: boolean, playlistLimit: number): Promise<SongMetadata[]> {
+    return this.youtubeAPI.getPlaylist(listId, shouldSplitChapters, playlistLimit);
   }
 
   private async soundCloudSource(url: string, playlistLimit: number): Promise<SongMetadata[]> {

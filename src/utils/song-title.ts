@@ -11,26 +11,12 @@ const getMaxSongTitleLength = (title: string) => {
 const cleanTitle = (title: string) => title.replace(/\[.*\]/, '').trim();
 
 export const getSongTitle = ({title, url, offset, source}: SongMetadata, shouldTruncate = false) => {
-  if (source === MediaSource.HLS) {
-    return `[${title}](<${url}>)`;
-  }
-
-  if (source === MediaSource.SoundCloud) {
-    const cleanSongTitle = cleanTitle(title);
-    const truncatedTitle = shouldTruncate ? truncate(cleanSongTitle, getMaxSongTitleLength(cleanSongTitle)) : cleanSongTitle;
-    const songTitle = truncate(truncatedTitle, 256);
-    // Keep long share parameters in the playable URL without overflowing Discord embeds.
+  const cleanSongTitle = source === MediaSource.HLS ? title : cleanTitle(title);
+  const songTitle = truncate(cleanSongTitle, shouldTruncate ? getMaxSongTitleLength(cleanSongTitle) : 256);
+  if (source === MediaSource.HLS || source === MediaSource.SoundCloud || source === MediaSource.Arbitrary) {
     return url.length > 1024 ? songTitle : `[${songTitle}](<${url}>)`;
   }
 
-  if (source === MediaSource.Arbitrary) {
-    const cleanSongTitle = cleanTitle(title);
-    const songTitle = shouldTruncate ? truncate(cleanSongTitle, getMaxSongTitleLength(cleanSongTitle)) : cleanSongTitle;
-    return `[${songTitle}](<${url}>)`;
-  }
-
-  const cleanSongTitle = cleanTitle(title);
-  const songTitle = shouldTruncate ? truncate(cleanSongTitle, getMaxSongTitleLength(cleanSongTitle)) : cleanSongTitle;
   const youtubeId = url.length === 11 ? url : getYouTubeID(url) ?? '';
 
   return `[${songTitle}](<https://www.youtube.com/watch?v=${youtubeId}${offset === 0 ? '' : '&t=' + String(offset)}>)`;

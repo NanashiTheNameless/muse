@@ -6,15 +6,18 @@ import AddQueryToQueue from '../services/add-query-to-queue.js';
 import {TYPES} from '../types.js';
 import {prisma} from '../utils/db.js';
 import {Pagination} from 'pagination.djs';
+import {truncate} from '../utils/string.js';
+
+const MAX_NAME_LENGTH = 100;
 
 @injectable()
 export default class implements Command {
   public readonly slashCommand = new SlashCommandBuilder()
     .setName('favorites')
-    .setDescription('Add a song to your favorites')
+    .setDescription('save and reuse named searches or URLs for this server')
     .addSubcommand(subcommand => subcommand
       .setName('use')
-      .setDescription('Use a favorite')
+      .setDescription('play a saved search or URL')
       .addStringOption(option => option
         .setName('name')
         .setDescription('Name of favorite')
@@ -37,14 +40,17 @@ export default class implements Command {
       .setDescription('List all favorites'))
     .addSubcommand(subcommand => subcommand
       .setName('create')
-      .setDescription('Create a new favorite')
+      .setDescription('save a named search or URL for this server')
       .addStringOption(option => option
         .setName('name')
-        .setDescription('You will type this when using this favorite')
+        .setDescription('you\'ll type this when using this favorite')
+        .setMinLength(1)
+        .setMaxLength(MAX_NAME_LENGTH)
         .setRequired(true))
       .addStringOption(option => option
         .setName('query')
-        .setDescription('Any input you would normally give to the play command')
+        .setDescription('any input you\'d normally give to the play command')
+        .setMinLength(1)
         .setRequired(true),
       ))
     .addSubcommand(subcommand => subcommand
@@ -92,7 +98,9 @@ export default class implements Command {
       },
     });
 
-    let results = query === '' ? favorites : favorites.filter((f: any) => f.name.toLowerCase().startsWith(query.toLowerCase()));
+    // Legacy names outside the choice limits can still be typed in full.
+    let results = favorites.filter((f: {name: string}) => f.name.length > 0 && f.name.length <= MAX_NAME_LENGTH
+      && f.name.toLowerCase().startsWith(query.toLowerCase()));
 
     if (subcommand === 'remove') {
       // Only show favorites that user is allowed to remove
@@ -146,16 +154,22 @@ export default class implements Command {
     const fields = new Array<APIEmbedField>(favorites.length);
     for (let index = 0; index < favorites.length; index++) {
       const favorite = favorites[index];
+      const attribution = ` (<@${favorite.authorId}>)`;
       fields[index] = {
         inline: false,
-        name: favorite.name,
-        value: `${favorite.query} (<@${favorite.authorId}>)`,
+        name: truncate(favorite.name || '(unnamed favorite)', 256),
+        value: `${truncate(favorite.query, 1024 - attribution.length)}${attribution}`,
       };
     }
 
-      await new Pagination(
-        interaction as any,
-      {limit: 25} as any)
+    // Reserve enough room for the paginator's footer even on the last page.
+    const footerLength = `Pages: ${favorites.length}/${favorites.length}`.length;
+    const largestField = fields.reduce((largest, field) => Math.max(largest, field.name.length + field.value.length), 0);
+    const pageSize = Math.min(25, Math.floor((6000 - footerLength) / largestField));
+
+    await new Pagination(
+      interaction as any,
+      {limit: pageSize})
       .setFields(fields)
       .paginateFields(true)
       .render();
@@ -164,6 +178,14 @@ export default class implements Command {
   private async create(interaction: ChatInputCommandInteraction) {
     const name = interaction.options.getString('name')!.trim();
     const query = interaction.options.getString('query')!.trim();
+
+    if (name.length === 0 || name.length > MAX_NAME_LENGTH) {
+      throw new Error(`favorite name must be between 1 and ${MAX_NAME_LENGTH} characters`);
+    }
+
+    if (query.length === 0) {
+      throw new Error('favorite query must not be empty');
+    }
 
     const existingFavorite = await prisma.favoriteQuery.findFirst({where: {
       guildId: interaction.guild!.id,

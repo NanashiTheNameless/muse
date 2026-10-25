@@ -18,6 +18,7 @@ interface YtDlpMediaDownload {
   readonly filesize?: number;
   readonly filesize_approx?: number;
   readonly http_headers?: Record<string, string | null | undefined>;
+  readonly available_at?: number;
 }
 
 interface YtDlpResponse extends YtDlpMediaDownload {
@@ -42,6 +43,8 @@ export interface YtDlpMediaSource {
   readonly url: string;
   readonly headers: Record<string, string>;
   readonly isLive: boolean;
+  // Unix seconds before which the site rejects the URL (yt-dlp sleeps until then before downloading).
+  readonly availableAt?: number;
 }
 
 export interface YtDlpUpdateResult {
@@ -422,10 +425,23 @@ export const updateYtDlp = async (): Promise<YtDlpUpdateResult> => {
   };
 };
 
+// Probe single-media formats before passing them to FFmpeg. If yt-dlp hides
+// the HTTP failure behind format selection, let FFmpeg classify it for retries.
+const extractWithFormatCheck = async (args: string[], checkFormats: boolean) => {
+  const checkedArgs = checkFormats ? ['--check-formats', ...args] : args;
+  try {
+    return await execa(getExecutable(), checkedArgs, {timeout: YT_DLP_EXTRACT_TIMEOUT_MS});
+  } catch (error: unknown) {
+    if (!checkFormats || !isExecaError(error) || !/Requested format is not available/i.test(error.stderr ?? '')) {
+      throw error;
+    }
+
+    return execa(getExecutable(), ['--no-check-formats', ...args], {timeout: YT_DLP_EXTRACT_TIMEOUT_MS});
+  }
+};
+
 const extractYouTubeMediaSource = async (videoIdOrUrl: string, attempt: YtDlpExtractAttempt, cookiesPath?: string): Promise<YtDlpMediaSource> => {
-  const {stdout} = await execa(getExecutable(), getYtDlpExtractArgs(attempt, videoIdOrUrl, cookiesPath), {
-    timeout: YT_DLP_EXTRACT_TIMEOUT_MS,
-  });
+  const {stdout} = await extractWithFormatCheck(getYtDlpExtractArgs(attempt, videoIdOrUrl, cookiesPath), true);
 
   const response = JSON.parse(stdout) as YtDlpResponse;
   const download = pickBestMediaDownload(response);
@@ -438,6 +454,7 @@ const extractYouTubeMediaSource = async (videoIdOrUrl: string, attempt: YtDlpExt
     url: download.url,
     headers: normalizeHeaders(download.http_headers ?? response.http_headers),
     isLive: Boolean(response.is_live ?? (response.live_status === 'is_live')),
+    availableAt: download.available_at ?? response.available_at,
   };
 };
 
@@ -486,9 +503,7 @@ const extractSoundCloud = async (url: string, playlistLimit?: number): Promise<Y
   let stdout: string;
 
   try {
-    ({stdout} = await execa(getExecutable(), getSoundCloudExtractArgs(url, playlistLimit), {
-      timeout: YT_DLP_EXTRACT_TIMEOUT_MS,
-    }));
+    ({stdout} = await extractWithFormatCheck(getSoundCloudExtractArgs(url, playlistLimit), playlistLimit === undefined));
   } catch (error: unknown) {
     const detail = getExecaErrorMessage(error);
     const message = `yt-dlp failed to extract media: ${detail}`;
@@ -524,5 +539,6 @@ export const getSoundCloudMediaSource = async (url: string): Promise<YtDlpMediaS
     url: download.url,
     headers: normalizeHeaders(download.http_headers ?? response.http_headers),
     isLive: Boolean(response.is_live ?? (response.live_status === 'is_live')),
+    availableAt: download.available_at ?? response.available_at,
   };
 };
