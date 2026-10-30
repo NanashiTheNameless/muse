@@ -4,7 +4,6 @@ import {inject, injectable} from 'inversify';
 import PlayerManager from '../managers/player.js';
 import Command from './index.js';
 import {SlashCommandBuilder} from '@discordjs/builders';
-import {buildPlayingMessageEmbed} from '../utils/build-embed.js';
 import Config from '../services/config.js';
 
 @injectable()
@@ -66,7 +65,6 @@ export default class implements Command {
           await player.forward(1);
           if (!(await this.safeEditReply(interaction, {
             content: 'Skipped the current song.',
-            embeds: player.getCurrent() ? [buildPlayingMessageEmbed(player)] : [],
           }))) {
             return;
           }
@@ -78,7 +76,6 @@ export default class implements Command {
           await player.forward(numToSkip);
           if (!(await this.safeEditReply(interaction, {
             content: `Skipped ${numToSkip} song(s).`,
-            embeds: player.getCurrent() ? [buildPlayingMessageEmbed(player)] : [],
           }))) {
             return;
           }
@@ -126,7 +123,6 @@ export default class implements Command {
         await player.forward(1);
         await this.safeEditReply(interaction, {
           content: `Vote skip passed (${votes}/${othersCount}). Skipped.`,
-          embeds: player.getCurrent() ? [buildPlayingMessageEmbed(player)] : [],
         });
       } catch (_: unknown) {
         throw new Error('No song to skip to.');

@@ -157,7 +157,6 @@ export default class implements Command {
         break;
       }
 
-
       case 'set-auto-announce-next-song': {
         const value = interaction.options.getBoolean('value')!;
 

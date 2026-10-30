@@ -12,5 +12,7 @@ export const TYPES = {
     AddQueryToQueue: Symbol('AddQueryToQueue'),
     GetSongs: Symbol('GetSongs'),
     YoutubeAPI: Symbol('YoutubeAPI'),
+    SessionHistoryStore: Symbol('SessionHistoryStore'),
+    SessionPlayer: Symbol('SessionPlayer'),
   },
 };

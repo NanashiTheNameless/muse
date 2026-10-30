@@ -1,5 +1,6 @@
 import {EmbedBuilder} from 'discord.js';
-import Player, {STATUS, PlayerPublic} from '../services/player.js';
+import type {default as Player, PlayerPublic} from '../services/player.js';
+import {STATUS} from '../services/player-types.js';
 import getProgressBar from './get-progress-bar.js';
 import {prettyTime} from './time.js';
 import {getSongTitle} from './song-title.js';

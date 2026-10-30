@@ -618,7 +618,7 @@ describe('/loop', () => {
 });
 
 describe('/config get', () => {
-  it('shows requester-only responses and the voice reduction target from their own settings', async () => {
+  it('shows the voice reduction target and omits the obsolete response visibility setting', async () => {
     mocks.getGuildSettings.mockResolvedValue({
       playlistLimit: 20,
       secondsToWaitAfterQueueEmpties: 30,
@@ -636,6 +636,10 @@ describe('/config get', () => {
     const response = editReply.mock.calls[0][0] as {embeds: Array<{toJSON: () => {description?: string}}>};
     const description = response.embeds[0].toJSON().description;
     expect(description).toContain('**Reduce volume when people speak**: Yes');
+    expect(description).not.toContain('requester only');
+    expect(description).not.toContain('queueAddResponseEphemeral');
+    const subcommands = new Config().slashCommand.toJSON().options!.map(option => option.name);
+    expect(subcommands).not.toContain('set-queue-add-response-hidden');
     expect(description).toContain('**Reduce volume when people speak target**: 23');
   });
 });
